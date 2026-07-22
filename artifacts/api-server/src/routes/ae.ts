@@ -96,7 +96,7 @@ router.get("/ae/me", async (req, res): Promise<void> => {
   const result = await aeGet(`${AE_COMMON}/info/me?v=${ts}`, cookies);
 
   if (!result.ok) {
-    req.log.warn({ status: result.status }, "AE /me returned error");
+    req.log.warn({ status: result.status, data: result.data, cookieLen: cookies.length }, "AE /me returned error");
     res.status(result.status).json({ error: "Errore AE", details: JSON.stringify(result.data) });
     return;
   }

@@ -388,19 +388,29 @@ export async function loginWithSiampe(
     await page.screenshot({ path: "/tmp/siampe-step5-after-login.png", fullPage: false }).catch(() => {});
     logger.info({ url: page.url() }, "Landed on AE after login");
 
-    // If landed on portale (not ivaservizi), navigate to DCO to get DCO-specific cookies
-    if (!page.url().includes("ivaservizi.agenziaentrate.gov.it")) {
-      logger.info("Navigating to DCO portal to get DCO cookies");
-      await page.goto(DCO_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
-      await new Promise((r) => setTimeout(r, 2000));
-    }
+    // Navigate to DCO to complete SSO and collect ivaservizi-specific cookies
+    logger.info("Navigating to DCO portal to get DCO cookies");
+    await page.goto(DCO_URL, { waitUntil: "networkidle2", timeout: 45000 }).catch(async () => {
+      // networkidle2 may timeout on slow connections — wait for domcontentloaded + extra time
+      await page.goto(DCO_URL, { waitUntil: "domcontentloaded", timeout: 30000 }).catch(() => {});
+      await new Promise((r) => setTimeout(r, 5000));
+    });
+    // Extra wait to allow any subsequent XHR/fetch auth calls to complete
+    await new Promise((r) => setTimeout(r, 3000));
+    logger.info({ url: page.url() }, "DCO navigation complete");
+
+    const allCookies = await page.cookies();
+    logger.info(
+      { count: allCookies.length, names: allCookies.map((c) => `${c.domain}:${c.name}`) },
+      "Cookies after DCO navigation",
+    );
 
     const cookies = await extractCookiesAndInfo(page, credentials);
     if (!cookies) {
       throw new Error("Could not extract session cookies after login");
     }
 
-    logger.info({ ragioneSociale: cookies.ragioneSociale }, "SIAMPE login successful");
+    logger.info({ ragioneSociale: cookies.ragioneSociale, cookieCount: allCookies.length }, "SIAMPE login successful");
     return cookies;
   } catch (err) {
     logger.error({ err, url: page.url() }, "SIAMPE login failed");

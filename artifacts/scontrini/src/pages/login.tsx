@@ -45,11 +45,20 @@ export default function LoginPage() {
         }
       },
       onError: (err) => {
-        toast({
-          title: "Errore di connessione",
-          description: err.error || "Impossibile connettersi al servizio.",
-          variant: "destructive"
-        });
+        const apiErr = err as { status?: number; data?: { error?: string } };
+        if (apiErr.status === 401) {
+          toast({
+            title: "Accesso negato",
+            description: apiErr.data?.error || "Credenziali non valide.",
+            variant: "destructive"
+          });
+        } else {
+          toast({
+            title: "Errore di connessione",
+            description: apiErr.data?.error || "Impossibile connettersi al servizio.",
+            variant: "destructive"
+          });
+        }
       }
     });
   };

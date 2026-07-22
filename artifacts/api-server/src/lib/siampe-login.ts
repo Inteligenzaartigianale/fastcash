@@ -388,68 +388,91 @@ export async function loginWithSiampe(
     await page.screenshot({ path: "/tmp/siampe-step5-after-login.png", fullPage: false }).catch(() => {});
     logger.info({ url: page.url() }, "Landed on AE after login");
 
-    // Brief wait for portale to finish setting server-side session cookies
-    await new Promise((r) => setTimeout(r, 1500));
+    // Wait for portale to finish loading its Liferay JS
+    await new Promise((r) => setTimeout(r, 4000));
+    await page.screenshot({ path: "/tmp/portale-home.png", fullPage: false }).catch(() => {});
 
-    // Navigate Puppeteer to the DCO URL.
-    // This triggers WebSphere SSO: Chrome sends portale cookies (LtpaToken2)
-    // to ivaservizi which should create an ivaservizi session.
-    logger.info("Navigating Puppeteer to DCO URL to trigger WebSphere SSO");
-    await page.goto(DCO_URL, { waitUntil: "domcontentloaded", timeout: 20000 }).catch(() => {});
-    await new Promise((r) => setTimeout(r, 2000));
+    // Strategy: navigate to the Liferay portale deep-link for DCO.
+    // When authenticated, Liferay's JS executes and redirects the browser
+    // to ivaservizi, establishing the cross-domain WebSphere session.
+    // This mirrors exactly what happens when the user clicks "Documenti Commerciali"
+    // in the portale menu.
+    const PORTALE_DCO_DEEPLINK =
+      "https://portale.agenziaentrate.gov.it/portale/web/guest/schede/comunicazioni/documenti-commerciali-online";
 
-    logger.info({ url: page.url() }, "DCO navigation complete");
+    logger.info("Navigating to portale DCO deep-link to trigger Liferay SSO redirect");
+    await page.goto(PORTALE_DCO_DEEPLINK, { waitUntil: "networkidle0", timeout: 30000 }).catch(() => {});
+    await new Promise((r) => setTimeout(r, 3000));
+    logger.info({ url: page.url() }, "After portale DCO deep-link navigation");
+    await page.screenshot({ path: "/tmp/portale-dco-deeplink.png", fullPage: false }).catch(() => {});
 
-    // If we landed on nonauth.html, the WebSphere SSO didn't complete.
-    // The nonauth page contains a SIAMPE login link. Since we already have
-    // valid SIAMPE session cookies, navigating to that link causes SIAMPE to
-    // skip the credentials form and directly issue an assertion for ivaservizi.
-    if (page.url().includes("nonauth")) {
-      logger.info("Landed on nonauth.html — extracting ivaservizi SIAMPE login link");
+    // If Liferay redirected us to ivaservizi — great, session is established.
+    // If not (still on portale or 403), look for clickable DCO links on the page.
+    if (!page.url().includes("ivaservizi")) {
+      logger.info("Still not on ivaservizi — scanning portale page for DCO links");
 
-      const nonAuthContent = await page.content().catch(() => "");
-      logger.info({ preview: nonAuthContent.substring(0, 600) }, "nonauth.html content");
-
-      const loginUrl = await page.evaluate(`(function() {
-        // Look for any link pointing to SIAMPE
-        var links = Array.from(document.querySelectorAll('a'));
-        for (var i = 0; i < links.length; i++) {
-          var href = links[i].href || '';
-          if (href.includes('iampe') || href.includes('sam/UI/Login')) return href;
+      // Collect all links from the current page
+      const allLinks = await page.evaluate(`(function() {
+        var result = [];
+        var els = Array.from(document.querySelectorAll('a[href]'));
+        for (var i = 0; i < els.length; i++) {
+          var href = els[i].href || '';
+          if (href.includes('ivaservizi') || href.includes('documenticommerciali') ||
+              href.includes('corrispettivi') || href.includes('fattura-e-corrispettivi')) {
+            result.push(href);
+          }
         }
-        // Check forms
-        var forms = Array.from(document.querySelectorAll('form'));
-        for (var j = 0; j < forms.length; j++) {
-          var action = forms[j].action || '';
-          if (action.includes('iampe') || action.includes('Login')) return action;
-        }
-        // meta refresh
-        var meta = document.querySelector('meta[http-equiv="refresh"]');
-        if (meta) {
-          var c = meta.getAttribute('content') || '';
-          var m = c.match(/url=(.+)/i);
-          if (m) return m[1].trim();
-        }
-        return null;
-      })()`).catch(() => null) as string | null;
+        return result;
+      })()`) as string[];
 
-      logger.info({ loginUrl }, "nonauth.html SIAMPE login link");
+      logger.info({ count: allLinks.length, links: allLinks.slice(0, 5) }, "DCO links found on portale page");
 
-      if (loginUrl && (loginUrl.includes("iampe") || loginUrl.includes("Login"))) {
-        // Navigate Puppeteer to the SIAMPE link — existing SIAMPE session cookies
-        // let SIAMPE skip credentials and redirect directly to ivaservizi
-        logger.info({ loginUrl }, "Following nonauth SIAMPE link with existing session");
-        await page.goto(loginUrl, { waitUntil: "domcontentloaded", timeout: 30000 }).catch(() => {});
+      if (allLinks.length > 0) {
+        const targetLink = allLinks[0]!;
+        logger.info({ targetLink }, "Clicking first DCO link on portale");
+        await page.goto(targetLink, { waitUntil: "networkidle0", timeout: 30000 }).catch(() => {});
         await new Promise((r) => setTimeout(r, 3000));
-        logger.info({ url: page.url() }, "After nonauth SIAMPE navigation");
+        logger.info({ url: page.url() }, "After clicking portale DCO link");
       } else {
-        // Fallback: try navigating to the ivaservizi-targeted SIAMPE URL directly
-        logger.warn("No SIAMPE link found in nonauth.html — trying SIAMPE_LOGIN_URL directly");
-        await page.goto(SIAMPE_LOGIN_URL, { waitUntil: "domcontentloaded", timeout: 30000 }).catch(() => {});
-        await new Promise((r) => setTimeout(r, 3000));
-        logger.info({ url: page.url() }, "After SIAMPE_LOGIN_URL fallback navigation");
+        // Last resort: go back to portale home and look for clickable elements
+        logger.warn("No DCO links found — navigating portale home and clicking DCO button");
+        await page.goto("https://portale.agenziaentrate.gov.it/PortaleWeb/home", {
+          waitUntil: "networkidle0", timeout: 30000,
+        }).catch(() => {});
+        await new Promise((r) => setTimeout(r, 5000)); // extra wait for Liferay portlets
+
+        await page.screenshot({ path: "/tmp/portale-home-v2.png", fullPage: false }).catch(() => {});
+
+        // Collect all links again from portale home
+        const homeLinks = await page.evaluate(`(function() {
+          var result = [];
+          var els = Array.from(document.querySelectorAll('a[href]'));
+          for (var i = 0; i < els.length; i++) {
+            var href = els[i].href || '';
+            var txt = (els[i].textContent || '').toLowerCase().trim();
+            if (href.includes('ivaservizi') || href.includes('documenticommerciali') ||
+                href.includes('corrispettivi') || txt.includes('corrispettivi') ||
+                txt.includes('documenti commerciali') || txt.includes('fattura e corrispettivi')) {
+              result.push({ href: href, text: txt.substring(0, 80) });
+            }
+          }
+          return result;
+        })()`) as Array<{ href: string; text: string }>;
+
+        logger.info({ links: homeLinks }, "DCO links found on portale home");
+
+        if (homeLinks.length > 0) {
+          await page.goto(homeLinks[0]!.href, { waitUntil: "networkidle0", timeout: 30000 }).catch(() => {});
+          await new Promise((r) => setTimeout(r, 3000));
+          logger.info({ url: page.url() }, "After clicking home DCO link");
+        }
       }
     }
+
+    // Check final landing URL
+    const finalUrl = page.url();
+    logger.info({ url: finalUrl }, "Final URL after DCO navigation attempts");
+    await page.screenshot({ path: "/tmp/dco-final.png", fullPage: false }).catch(() => {});
 
     // Extract all cookies captured by Puppeteer (should now include LtpaToken2)
     const puppeteerCookies = await page.cookies();

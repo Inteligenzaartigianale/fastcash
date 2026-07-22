@@ -388,15 +388,39 @@ export async function loginWithSiampe(
     await page.screenshot({ path: "/tmp/siampe-step5-after-login.png", fullPage: false }).catch(() => {});
     logger.info({ url: page.url() }, "Landed on AE after login");
 
-    // Navigate to DCO to complete SSO and collect ivaservizi-specific cookies
-    logger.info("Navigating to DCO portal to get DCO cookies");
-    await page.goto(DCO_URL, { waitUntil: "networkidle2", timeout: 45000 }).catch(async () => {
-      // networkidle2 may timeout on slow connections — wait for domcontentloaded + extra time
+    // Wait a bit for the portale SPA to hydrate, then look for the DCO link
+    await new Promise((r) => setTimeout(r, 4000));
+    const portaleHtml = await page.evaluate("document.body?.innerHTML?.substring(0,6000)||''").catch(() => "") as string;
+    logger.info({ portaleHtml }, "Portale HTML after login");
+
+    // Try to find the DCO link on portale and click it (proper SSO path to ivaservizi)
+    const dcoLink = await page.evaluate(`(function(){
+      var links = Array.from(document.querySelectorAll('a[href]'));
+      var dco = links.find(function(l){
+        var h = l.getAttribute('href') || '';
+        var t = l.textContent || '';
+        return h.includes('documenticommerciali') || h.includes('ivaservizi') ||
+               t.toLowerCase().includes('documento commerciale') ||
+               t.toLowerCase().includes('corrispettivi') ||
+               t.toLowerCase().includes('documenti commerciali');
+      });
+      return dco ? dco.getAttribute('href') : null;
+    })()`).catch(() => null) as string | null;
+
+    logger.info({ dcoLink }, "DCO link found on portale");
+
+    if (dcoLink) {
+      // Navigate via portale link — this carries SSO token to ivaservizi
+      const href = dcoLink.startsWith('http') ? dcoLink : `https://portale.agenziaentrate.gov.it${dcoLink}`;
+      await page.goto(href, { waitUntil: "domcontentloaded", timeout: 30000 }).catch(() => {});
+      await new Promise((r) => setTimeout(r, 5000));
+    } else {
+      // Fallback: navigate directly — may work if SIAMPE cookies are accepted by ivaservizi
+      logger.info("No DCO link found on portale, navigating directly to DCO URL");
       await page.goto(DCO_URL, { waitUntil: "domcontentloaded", timeout: 30000 }).catch(() => {});
       await new Promise((r) => setTimeout(r, 5000));
-    });
-    // Extra wait to allow any subsequent XHR/fetch auth calls to complete
-    await new Promise((r) => setTimeout(r, 3000));
+    }
+
     logger.info({ url: page.url() }, "DCO navigation complete");
 
     const allCookies = await page.cookies();

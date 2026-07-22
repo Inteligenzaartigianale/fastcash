@@ -147,7 +147,7 @@ export default function HomePage() {
 
   if (authLoading || !isAuthenticated) return null;
 
-  const today = new Intl.DateTimeDateTimeFormat('it-IT', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute:'2-digit' }).format(new Date());
+  const today = new Intl.DateTimeFormat('it-IT', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute:'2-digit' }).format(new Date());
 
   return (
     <div className="min-h-[100dvh] flex flex-col bg-background pb-20">

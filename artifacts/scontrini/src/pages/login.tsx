@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { useLogin } from "@workspace/api-client-react";
-import { Shield } from "lucide-react";
+import { Shield, Eye, EyeOff } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 export default function LoginPage() {
@@ -14,6 +14,8 @@ export default function LoginPage() {
   const [codiceFiscale, setCodiceFiscale] = useState("");
   const [password, setPassword] = useState("");
   const [pin, setPin] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showPin, setShowPin] = useState(false);
 
   const loginMutation = useLogin();
 
@@ -75,45 +77,73 @@ export default function LoginPage() {
                 value={codiceFiscale}
                 onChange={(e) => setCodiceFiscale(e.target.value.toUpperCase())}
                 disabled={loginMutation.isPending}
+                autoCapitalize="none"
+                autoCorrect="off"
                 data-testid="input-login-cf"
               />
             </div>
             <div className="space-y-2">
               <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="Inserisci la password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                disabled={loginMutation.isPending}
-                autoCapitalize="none"
-                autoCorrect="off"
-                autoComplete="current-password"
-                data-testid="input-login-password"
-              />
+              <div className="relative">
+                <Input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  placeholder="Inserisci la password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  disabled={loginMutation.isPending}
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  autoComplete="current-password"
+                  className="pr-10"
+                  data-testid="input-login-password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  tabIndex={-1}
+                  aria-label={showPassword ? "Nascondi password" : "Mostra password"}
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
             <div className="space-y-2">
               <Label htmlFor="pin">PIN</Label>
-              <Input
-                id="pin"
-                type="password"
-                placeholder="Inserisci il PIN"
-                value={pin}
-                onChange={(e) => setPin(e.target.value)}
-                disabled={loginMutation.isPending}
-                data-testid="input-login-pin"
-              />
+              <div className="relative">
+                <Input
+                  id="pin"
+                  type={showPin ? "text" : "password"}
+                  placeholder="Inserisci il PIN"
+                  value={pin}
+                  onChange={(e) => setPin(e.target.value)}
+                  disabled={loginMutation.isPending}
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  className="pr-10"
+                  data-testid="input-login-pin"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPin((v) => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  tabIndex={-1}
+                  aria-label={showPin ? "Nascondi PIN" : "Mostra PIN"}
+                >
+                  {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
-            
+
             <div className="bg-blue-50 dark:bg-blue-950/30 text-blue-800 dark:text-blue-300 text-xs p-3 rounded border border-blue-100 dark:border-blue-900 mt-4">
               <p>Nota: Il sistema si connette al portale dell'Agenzia delle Entrate in tempo reale. L'operazione potrebbe richiedere alcuni secondi.</p>
             </div>
           </CardContent>
           <CardFooter className="flex flex-col border-t border-border/50 bg-muted/20 pt-6">
-            <Button 
-              type="submit" 
-              className="w-full" 
+            <Button
+              type="submit"
+              className="w-full"
               disabled={loginMutation.isPending}
               data-testid="button-login-submit"
             >

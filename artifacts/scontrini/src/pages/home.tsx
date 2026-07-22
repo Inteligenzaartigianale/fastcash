@@ -163,7 +163,7 @@ export default function HomePage() {
             )}
           </div>
         </div>
-        <Button variant="ghost" size="sm" className="text-primary-foreground hover:bg-primary-foreground/10 hover:text-white" onClick={() => logoutMutation.mutate()}>
+        <Button variant="ghost" size="sm" className="text-primary-foreground hover:bg-primary-foreground/10 hover:text-white" onClick={() => logoutMutation.mutate(undefined, { onSettled: () => setLocation('/login') })}>
           <LogOut className="w-4 h-4 mr-2" />
           Esci
         </Button>

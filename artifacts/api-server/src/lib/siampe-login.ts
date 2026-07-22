@@ -229,23 +229,58 @@ export async function loginWithSiampe(
     await page.screenshot({ path: "/tmp/siampe-step1.png", fullPage: false }).catch(() => {});
     logger.info({ url: page.url() }, "After SIAMPE navigation");
 
-    // The SIAMPE login page opens on the SPID tab — switch to Fisconline/Entratel via text match
+    // The SIAMPE login page opens on the SPID tab — switch to Fisconline/Entratel.
+    // IMPORTANT: synthetic .click() doesn't trigger React event handlers on this SPA.
+    // We must use real mouse coordinates (page.mouse.click) so React updates the tab state.
     logger.info("Clicking Fisconline/Entratel tab");
-    // Wait for any tab to render, then click the one containing "Fisconline"
-    await waitForAnySelector(page, ['button, [role="tab"], li, a'], 10000).catch(() => {});
-    await page.evaluate(`
-      var els = Array.from(document.querySelectorAll('button, [role="tab"], li, a, span'));
-      var tab = els.find(function(el){ return el.textContent && el.textContent.trim().includes('Fisconline'); });
-      if (tab) tab.click();
-    `);
-    await new Promise((r) => setTimeout(r, 1500));
+    await new Promise((r) => setTimeout(r, 2000)); // let React fully initialize
+
+    // Get the element's center coordinates
+    const tabCoords = await page.evaluate(`(function(){
+      var els = Array.from(document.querySelectorAll('[role="tab"], button, li, a, span'));
+      var tab = els.find(function(el){
+        var t = el.textContent && el.textContent.trim();
+        return t && t.includes('Fisconline');
+      });
+      if (!tab) return null;
+      tab.scrollIntoView({ block: 'center' });
+      var r = tab.getBoundingClientRect();
+      return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+    })()`) as { x: number; y: number } | null;
+
+    if (tabCoords) {
+      logger.info({ tabCoords }, "Found Fisconline tab, clicking via mouse");
+      await page.mouse.click(tabCoords.x, tabCoords.y);
+    } else {
+      logger.warn("Fisconline tab not found via coordinates — falling back to evaluate click");
+      await page.evaluate(`
+        var els = Array.from(document.querySelectorAll('[role="tab"], button, li, a, span'));
+        var tab = els.find(function(el){ return el.textContent && el.textContent.trim().includes('Fisconline'); });
+        if (tab) tab.click();
+      `);
+    }
+
+    // Wait for the tab content to switch (CF input must become visible)
+    let cfVisible = false;
+    for (let i = 0; i < 10; i++) {
+      await new Promise((r) => setTimeout(r, 500));
+      cfVisible = await page.evaluate(`(function(){
+        var inputs = Array.from(document.querySelectorAll('input'));
+        return inputs.some(function(inp){
+          if (!inp.placeholder) return false;
+          var s = inp.getBoundingClientRect();
+          return s.width > 0 && s.height > 0 && inp.placeholder.toLowerCase().includes('codice');
+        });
+      })()`) as boolean;
+      if (cfVisible) break;
+    }
+    logger.info({ cfVisible }, "After tab click — CF input visible");
 
     await page.screenshot({ path: "/tmp/siampe-step-tab.png", fullPage: false }).catch(() => {});
-    logger.info({ url: page.url() }, "After tab click");
 
-    // Step 1: Fill codice fiscale
-    logger.info("Waiting for codice fiscale input");
-    const cfSelector = await waitForAnySelector(page, [
+    // Step 1: Fill codice fiscale — only match visible inputs (tab must be active)
+    logger.info("Waiting for visible codice fiscale input");
+    const cfSelector = await waitForVisibleInput(page, [
       'input[name="codiceFiscale"]',
       'input[id="codiceFiscale"]',
       'input[autocomplete="username"]',
@@ -255,75 +290,95 @@ export async function loginWithSiampe(
     logger.info({ cfSelector }, "Filling codice fiscale");
     await clearAndType(page, cfSelector, credentials.codiceFiscale);
 
-    // Step 2: Fill password
+    // Step 2: Fill password — the form has CF + Password + PIN all on ONE page
     logger.info("Filling password");
-    const pwdSelector = await waitForAnySelector(page, [
+    const pwdSelector = await waitForVisibleInput(page, [
       'input[name="password"]',
       'input[id="password"]',
       'input[type="password"]',
     ], 10000);
     await clearAndType(page, pwdSelector, credentials.password);
 
+    // Step 3: Fill PIN — same page, third field next to password
+    logger.info("Filling PIN");
+    // The SIAMPE Fisconline form shows Password and PIN side by side on the same page.
+    // We need the SECOND password-type input (PIN), or any input matching PIN label.
+    const pinSelector = await waitForVisibleInput(page, [
+      'input[placeholder*="PIN" i]',
+      'input[placeholder*="pin" i]',
+      'input[name*="pin" i]',
+      'input[id*="pin" i]',
+    ], 5000).catch(async () => {
+      // Fallback: get the second visible input[type=password] (PIN is right of password)
+      const secondPwd = await page.evaluate(`(function(){
+        var inputs = Array.from(document.querySelectorAll('input[type="password"], input[type="text"]'));
+        var visible = inputs.filter(function(inp){
+          var r = inp.getBoundingClientRect();
+          return r.width > 0 && r.height > 0;
+        });
+        // Return selector for the second visible input (PIN comes after Password)
+        return visible.length >= 2 ? null : null;
+      })()`);
+      void secondPwd;
+      // Use evaluate-based fill for the second password input
+      return "__second_password__";
+    });
+
+    if (pinSelector === "__second_password__") {
+      // Fill PIN by targeting the second visible password-like input
+      await page.evaluate(`(function(pin){
+        var inputs = Array.from(document.querySelectorAll('input[type="password"], input[type="text"]'));
+        var visible = inputs.filter(function(inp){
+          var r = inp.getBoundingClientRect();
+          return r.width > 0 && r.height > 0;
+        });
+        var pinInput = visible[1]; // second visible input = PIN
+        if (pinInput) {
+          pinInput.focus();
+          pinInput.value = pin;
+          pinInput.dispatchEvent(new Event('input', {bubbles:true}));
+          pinInput.dispatchEvent(new Event('change', {bubbles:true}));
+        }
+      })('${credentials.pin.replace(/'/g, "\\'")}')`) ;
+      logger.info("Filled PIN via second-password fallback");
+    } else {
+      await clearAndType(page, pinSelector, credentials.pin);
+      logger.info({ pinSelector }, "Filled PIN via selector");
+    }
+
     await page.screenshot({ path: "/tmp/siampe-step2-filled.png", fullPage: false }).catch(() => {});
 
-    // Step 3: Submit credentials — try multiple button strategies
-    logger.info("Submitting login form step 1");
+    // Step 4: Submit the Fisconline form (CF + password + PIN → single "Accedi" click)
+    logger.info("Submitting Fisconline form");
     await clickButton(page, [
       'button[type="submit"]',
       'input[type="submit"]',
-      'button:has-text("Entra")',
       'button:has-text("Accedi")',
+      'button:has-text("Entra")',
       'button:has-text("Conferma")',
     ]);
 
     await page.screenshot({ path: "/tmp/siampe-step3-after-submit.png", fullPage: false }).catch(() => {});
-    const urlAfterStep1 = page.url();
-    logger.info({ url: urlAfterStep1 }, "After step 1 submit");
+    const urlAfterSubmit = page.url();
+    logger.info({ url: urlAfterSubmit }, "After form submit");
 
-    // Detect wrong credentials: SIAMPE redirects to public portale on failure
-    if (
-      urlAfterStep1.includes("www.agenziaentrate.gov.it/portale") ||
-      urlAfterStep1.includes("/portale/web/guest")
-    ) {
-      throw new Error("Credenziali non valide: codice fiscale o password errati");
+    // Check for SIAMPE error messages immediately after submit (before waiting for redirect)
+    const pageText = await page.evaluate("document.body?.innerText || ''").catch(() => "") as string;
+    logger.info({ pageText: pageText.substring(0, 200) }, "Page text after submit");
+
+    const credErr =
+      pageText.includes("Credenziali errate") ||
+      pageText.includes("Autenticazione fallita") ||
+      pageText.includes("credenziali non corrette") ||
+      pageText.includes("dati inseriti non sono corretti") ||
+      urlAfterSubmit.includes("www.agenziaentrate.gov.it/portale") ||
+      urlAfterSubmit.includes("/portale/web/guest");
+
+    if (credErr) {
+      throw new Error("Credenziali non valide: codice fiscale, password o PIN errati");
     }
 
-    // Also check for explicit error message on SIAMPE page
-    const siampeError = await page.evaluate(
-      "document.querySelector('.alert-danger, .error-message, [class*=\"error\"], [class*=\"alert\"]')?.textContent?.trim() || ''",
-    ).catch(() => "") as string;
-    if (siampeError && (siampeError.toLowerCase().includes("errat") || siampeError.toLowerCase().includes("non valid"))) {
-      throw new Error(`Credenziali non valide: ${siampeError}`);
-    }
-
-    // Step 4: Fill PIN (second factor) — only if still on SIAMPE domain
-    logger.info({ url: urlAfterStep1 }, "Waiting for PIN input");
-    const pinSelector = await waitForAnySelector(page, [
-      'input[name="pin"]',
-      'input[id="pin"]',
-      'input[placeholder*="PIN" i]',
-      'input[placeholder*="pin" i]',
-      'input[name*="otp" i]',
-      'input[placeholder*="codice" i]',
-      'input[type="password"]',
-      'input[type="text"]',
-    ], 20000);
-    logger.info({ pinSelector }, "Filling PIN");
-    await clearAndType(page, pinSelector, credentials.pin);
-
-    await page.screenshot({ path: "/tmp/siampe-step4-pin.png", fullPage: false }).catch(() => {});
-
-    // Step 5: Submit PIN form
-    logger.info("Submitting PIN form");
-    await clickButton(page, [
-      'button[type="submit"]',
-      'input[type="submit"]',
-      'button:has-text("Entra")',
-      'button:has-text("Conferma")',
-      'button:has-text("Accedi")',
-    ]);
-
-    // Step 6: Wait for redirect back to AE (ivaservizi or portale)
+    // Wait for redirect back to AE (success path)
     logger.info("Waiting for redirect back to AE");
     await page.waitForFunction(
       "window.location.hostname.includes('agenziaentrate.gov.it') && !window.location.hostname.includes('iampe')",
@@ -363,6 +418,30 @@ export async function loginWithSiampe(
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+/** Wait for the first VISIBLE input matching one of the selectors */
+async function waitForVisibleInput(
+  page: Page,
+  selectors: string[],
+  timeout: number,
+): Promise<string> {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    for (const selector of selectors) {
+      try {
+        const visible = await page.evaluate(`(function(){
+          var el = document.querySelector('${selector.replace(/'/g, "\\'")}');
+          if (!el) return false;
+          var r = el.getBoundingClientRect();
+          return r.width > 0 && r.height > 0;
+        })()`);
+        if (visible) return selector;
+      } catch { /* ignore */ }
+    }
+    await new Promise((r) => setTimeout(r, 300));
+  }
+  throw new Error(`No visible input found within ${timeout}ms: ${selectors.join(", ")}`);
+}
+
 /** Wait for the first matching selector and return which one matched */
 async function waitForAnySelector(
   page: Page,
@@ -392,13 +471,13 @@ async function clearAndType(page: Page, selector: string, value: string): Promis
 
 /** Click a button matching one of the selectors, wait for navigation */
 async function clickButton(page: Page, selectors: string[]): Promise<void> {
-  // First try: selector-based click with nav wait
+  // First try: selector-based click with short nav wait (wrong creds → no nav, correct → redirects)
   for (const selector of selectors) {
     try {
       const el = await page.$(selector);
       if (el) {
         await Promise.all([
-          page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 30000 }).catch(() => {}),
+          page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 8000 }).catch(() => {}),
           el.click(),
         ]);
         return;
@@ -419,7 +498,7 @@ async function clickButton(page: Page, selectors: string[]): Promise<void> {
     return false;
   })()`) as boolean;
   if (!clicked) throw new Error(`Could not find button: ${selectors.join(", ")}`);
-  await page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 30000 }).catch(() => {});
+  await page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 8000 }).catch(() => {});
 }
 
 async function extractCookiesAndInfo(

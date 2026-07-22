@@ -144,16 +144,15 @@ router.post("/ae/documenti", async (req, res): Promise<void> => {
 
   req.log.info({ tipoOperazione: input.tipoOperazione }, "Sending documento to AE");
 
-  const ts = Date.now();
   const result = await aePost(
-    `${AE_API}/doc/documenti/?v=${ts}`,
+    `${AE_API}/doc/documenti/`,
     cookies,
     dcw10Payload,
   );
 
   if (!result.ok) {
     const allowHeader = (result as { headers?: Headers }).headers?.get?.("allow") ?? "";
-    req.log.warn({ status: result.status, data: result.data, allow: allowHeader, url: `${AE_API}/doc/documenti/?v=${ts}` }, "AE documenti error");
+    req.log.warn({ status: result.status, data: result.data, allow: allowHeader, url: `${AE_API}/doc/documenti/` }, "AE documenti error");
     res.status(result.status).json({
       error: "Errore dall'AE durante l'invio del documento",
       details: JSON.stringify(result.data),

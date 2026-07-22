@@ -391,14 +391,65 @@ export async function loginWithSiampe(
     // Brief wait for portale to finish setting server-side session cookies
     await new Promise((r) => setTimeout(r, 1500));
 
-    // Navigate Puppeteer to the DCO URL — this is the critical step that
-    // triggers WebSphere SSO: Chrome sends SIAMPE cookies to ivaservizi,
-    // WebSphere validates them and issues LtpaToken2 for ivaservizi.
+    // Navigate Puppeteer to the DCO URL.
+    // This triggers WebSphere SSO: Chrome sends portale cookies (LtpaToken2)
+    // to ivaservizi which should create an ivaservizi session.
     logger.info("Navigating Puppeteer to DCO URL to trigger WebSphere SSO");
     await page.goto(DCO_URL, { waitUntil: "domcontentloaded", timeout: 20000 }).catch(() => {});
-    await new Promise((r) => setTimeout(r, 2000)); // wait for SSO cookies to settle
+    await new Promise((r) => setTimeout(r, 2000));
 
     logger.info({ url: page.url() }, "DCO navigation complete");
+
+    // If we landed on nonauth.html, the WebSphere SSO didn't complete.
+    // The nonauth page contains a SIAMPE login link. Since we already have
+    // valid SIAMPE session cookies, navigating to that link causes SIAMPE to
+    // skip the credentials form and directly issue an assertion for ivaservizi.
+    if (page.url().includes("nonauth")) {
+      logger.info("Landed on nonauth.html — extracting ivaservizi SIAMPE login link");
+
+      const nonAuthContent = await page.content().catch(() => "");
+      logger.info({ preview: nonAuthContent.substring(0, 600) }, "nonauth.html content");
+
+      const loginUrl = await page.evaluate(`(function() {
+        // Look for any link pointing to SIAMPE
+        var links = Array.from(document.querySelectorAll('a'));
+        for (var i = 0; i < links.length; i++) {
+          var href = links[i].href || '';
+          if (href.includes('iampe') || href.includes('sam/UI/Login')) return href;
+        }
+        // Check forms
+        var forms = Array.from(document.querySelectorAll('form'));
+        for (var j = 0; j < forms.length; j++) {
+          var action = forms[j].action || '';
+          if (action.includes('iampe') || action.includes('Login')) return action;
+        }
+        // meta refresh
+        var meta = document.querySelector('meta[http-equiv="refresh"]');
+        if (meta) {
+          var c = meta.getAttribute('content') || '';
+          var m = c.match(/url=(.+)/i);
+          if (m) return m[1].trim();
+        }
+        return null;
+      })()`).catch(() => null) as string | null;
+
+      logger.info({ loginUrl }, "nonauth.html SIAMPE login link");
+
+      if (loginUrl && (loginUrl.includes("iampe") || loginUrl.includes("Login"))) {
+        // Navigate Puppeteer to the SIAMPE link — existing SIAMPE session cookies
+        // let SIAMPE skip credentials and redirect directly to ivaservizi
+        logger.info({ loginUrl }, "Following nonauth SIAMPE link with existing session");
+        await page.goto(loginUrl, { waitUntil: "domcontentloaded", timeout: 30000 }).catch(() => {});
+        await new Promise((r) => setTimeout(r, 3000));
+        logger.info({ url: page.url() }, "After nonauth SIAMPE navigation");
+      } else {
+        // Fallback: try navigating to the ivaservizi-targeted SIAMPE URL directly
+        logger.warn("No SIAMPE link found in nonauth.html — trying SIAMPE_LOGIN_URL directly");
+        await page.goto(SIAMPE_LOGIN_URL, { waitUntil: "domcontentloaded", timeout: 30000 }).catch(() => {});
+        await new Promise((r) => setTimeout(r, 3000));
+        logger.info({ url: page.url() }, "After SIAMPE_LOGIN_URL fallback navigation");
+      }
+    }
 
     // Extract all cookies captured by Puppeteer (should now include LtpaToken2)
     const puppeteerCookies = await page.cookies();

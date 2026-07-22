@@ -388,54 +388,57 @@ export async function loginWithSiampe(
     await page.screenshot({ path: "/tmp/siampe-step5-after-login.png", fullPage: false }).catch(() => {});
     logger.info({ url: page.url() }, "Landed on AE after login");
 
-    // Wait a bit for the portale SPA to hydrate, then look for the DCO link
-    await new Promise((r) => setTimeout(r, 4000));
-    const portaleHtml = await page.evaluate("document.body?.innerHTML?.substring(0,6000)||''").catch(() => "") as string;
-    logger.info({ portaleHtml }, "Portale HTML after login");
+    // Extract cookies captured so far (SIAMPE + portale cookies from Puppeteer)
+    const puppeteerCookies = await page.cookies();
+    logger.info(
+      { count: puppeteerCookies.length, names: puppeteerCookies.map((c) => `${c.domain}:${c.name}`) },
+      "Puppeteer cookies after portale landing",
+    );
 
-    // Try to find the DCO link on portale and click it (proper SSO path to ivaservizi)
-    const dcoLink = await page.evaluate(`(function(){
-      var links = Array.from(document.querySelectorAll('a[href]'));
-      var dco = links.find(function(l){
-        var h = l.getAttribute('href') || '';
-        var t = l.textContent || '';
-        return h.includes('documenticommerciali') || h.includes('ivaservizi') ||
-               t.toLowerCase().includes('documento commerciale') ||
-               t.toLowerCase().includes('corrispettivi') ||
-               t.toLowerCase().includes('documenti commerciali');
-      });
-      return dco ? dco.getAttribute('href') : null;
-    })()`).catch(() => null) as string | null;
+    const siampeCookieHeader = puppeteerCookies
+      .filter((c) => c.domain.includes("agenziaentrate.gov.it"))
+      .map((c) => `${c.name}=${c.value}`)
+      .join("; ");
 
-    logger.info({ dcoLink }, "DCO link found on portale");
+    // Use Node.js fetch to follow portale → ivaservizi SSO redirect chain.
+    // Chrome 92 cannot render the portale SPA, but Node's fetch can follow
+    // the redirect chain and collect the ivaservizi session cookies.
+    const enrichedCookies = await followPortaleSSOToIvaservizi(siampeCookieHeader);
 
-    if (dcoLink) {
-      // Navigate via portale link — this carries SSO token to ivaservizi
-      const href = dcoLink.startsWith('http') ? dcoLink : `https://portale.agenziaentrate.gov.it${dcoLink}`;
-      await page.goto(href, { waitUntil: "domcontentloaded", timeout: 30000 }).catch(() => {});
-      await new Promise((r) => setTimeout(r, 5000));
-    } else {
-      // Fallback: navigate directly — may work if SIAMPE cookies are accepted by ivaservizi
-      logger.info("No DCO link found on portale, navigating directly to DCO URL");
-      await page.goto(DCO_URL, { waitUntil: "domcontentloaded", timeout: 30000 }).catch(() => {});
-      await new Promise((r) => setTimeout(r, 5000));
+    // Also set these cookies in Puppeteer so extractCookiesAndInfo can read them
+    const extraCookies = parseCookieHeader(enrichedCookies);
+    for (const [name, value] of Object.entries(extraCookies)) {
+      if (!siampeCookieHeader.includes(`${name}=`)) {
+        try {
+          await page.setCookie({ name, value, domain: "ivaservizi.agenziaentrate.gov.it", path: "/" });
+        } catch { /* ignore */ }
+      }
     }
-
-    logger.info({ url: page.url() }, "DCO navigation complete");
 
     const allCookies = await page.cookies();
     logger.info(
       { count: allCookies.length, names: allCookies.map((c) => `${c.domain}:${c.name}`) },
-      "Cookies after DCO navigation",
+      "Cookies after SSO chain",
     );
 
-    const cookies = await extractCookiesAndInfo(page, credentials);
-    if (!cookies) {
+    const ragioneSociale = await page.evaluate(
+      "document.querySelector('.utente, .user-info, [class*=\"utente\"], [class*=\"user\"]')?.textContent?.trim() || ''",
+    ).catch(() => "") as string;
+
+    const cookieHeader = enrichedCookies || siampeCookieHeader;
+
+    if (!cookieHeader) {
       throw new Error("Could not extract session cookies after login");
     }
 
-    logger.info({ ragioneSociale: cookies.ragioneSociale, cookieCount: allCookies.length }, "SIAMPE login successful");
-    return cookies;
+    logger.info({ ragioneSociale, cookieLen: cookieHeader.length }, "SIAMPE login successful");
+
+    return {
+      cookieHeader,
+      ragioneSociale: ragioneSociale.split("\n")[0]?.trim() ?? "",
+      partitaIva: credentials.codiceFiscale,
+      codiceFiscale: credentials.codiceFiscale,
+    };
   } catch (err) {
     logger.error({ err, url: page.url() }, "SIAMPE login failed");
     await page.screenshot({ path: "/tmp/siampe-error.png", fullPage: false }).catch(() => {});
@@ -564,5 +567,161 @@ async function extractCookiesAndInfo(
     partitaIva: credentials.codiceFiscale,
     codiceFiscale: credentials.codiceFiscale,
   };
+}
+
+/** Parse a cookie header string into a name→value map */
+function parseCookieHeader(cookieHeader: string): Record<string, string> {
+  const jar: Record<string, string> = {};
+  for (const pair of cookieHeader.split(";").map((s) => s.trim())) {
+    const eqIdx = pair.indexOf("=");
+    if (eqIdx > 0) {
+      jar[pair.substring(0, eqIdx).trim()] = pair.substring(eqIdx + 1).trim();
+    }
+  }
+  return jar;
+}
+
+/**
+ * Follow the portale → ivaservizi SSO redirect chain using plain Node.js fetch.
+ *
+ * Chrome 92 cannot render the Liferay portale SPA, but the IBM WebSphere
+ * LtpaToken2 SSO mechanism works at the HTTP level: navigating from portale
+ * to ivaservizi triggers a series of 302 redirects that set the ivaservizi
+ * session cookie.  We replicate that chain here without a browser.
+ *
+ * URLs tried (in order):
+ *  1. Portale DCO deep-link (Liferay path for DCO service)
+ *  2. Portale home (causes portale to redirect to ivaservizi after entity ctx)
+ *  3. Direct ivaservizi DCO URL (works if LtpaToken2 already covers ivaservizi)
+ */
+async function followPortaleSSOToIvaservizi(siampeCookies: string): Promise<string> {
+  const BROWSER_UA =
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
+  const ENTRY_URLS = [
+    // Liferay deep-link for DCO — navigating here while authenticated on portale
+    // triggers the portale→ivaservizi SSO flow automatically
+    "https://portale.agenziaentrate.gov.it/portale/web/guest/schede/comunicazioni/documenti-commerciali-online",
+    // Fallback: direct ivaservizi URL — if LtpaToken2 covers ivaservizi, this
+    // triggers a SAML/token exchange that sets the session cookie
+    "https://ivaservizi.agenziaentrate.gov.it/ser/documenticommercialionline/",
+  ];
+
+  // Start with SIAMPE cookies in the jar
+  const cookieJar: Record<string, string> = parseCookieHeader(siampeCookies);
+
+  function buildHeader(): string {
+    return Object.entries(cookieJar)
+      .map(([k, v]) => `${k}=${v}`)
+      .join("; ");
+  }
+
+  function absUrl(location: string, base: string): string {
+    if (location.startsWith("http")) return location;
+    try { return new URL(location, base).toString(); } catch { return location; }
+  }
+
+  function ingestSetCookie(headers: Headers): void {
+    // Node 18+ fetch exposes getSetCookie() returning string[]
+    const setCookies: string[] =
+      typeof (headers as unknown as { getSetCookie?: () => string[] }).getSetCookie === "function"
+        ? (headers as unknown as { getSetCookie: () => string[] }).getSetCookie()
+        : [];
+
+    for (const sc of setCookies) {
+      // Each value looks like: "name=val; Path=/; Domain=.foo.it; HttpOnly"
+      const nameVal = sc.split(";")[0]?.trim() ?? "";
+      const eqIdx = nameVal.indexOf("=");
+      if (eqIdx > 0) {
+        const name = nameVal.substring(0, eqIdx).trim();
+        const val = nameVal.substring(eqIdx + 1).trim();
+        if (name) cookieJar[name] = val;
+      }
+    }
+  }
+
+  let reachedIvaservizi = false;
+
+  for (const entryUrl of ENTRY_URLS) {
+    if (reachedIvaservizi) break;
+    let currentUrl = entryUrl;
+
+    for (let hop = 0; hop < 20; hop++) {
+      let res: Response;
+      try {
+        res = await fetch(currentUrl, {
+          method: "GET",
+          headers: {
+            Cookie: buildHeader(),
+            "User-Agent": BROWSER_UA,
+            Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "it-IT,it;q=0.9,en-US;q=0.8",
+            Referer: "https://portale.agenziaentrate.gov.it/",
+          },
+          redirect: "manual",
+        });
+      } catch (err) {
+        logger.warn({ hop, currentUrl, err }, "SSO chain fetch error");
+        break;
+      }
+
+      ingestSetCookie(res.headers);
+
+      const location = res.headers.get("location") ?? "";
+      const cookieNames = Object.keys(cookieJar).join(",");
+
+      logger.info(
+        { hop, url: currentUrl, status: res.status, location: location.substring(0, 120), cookies: cookieNames },
+        "SSO redirect hop",
+      );
+
+      if (res.status >= 300 && res.status < 400 && location) {
+        const next = absUrl(location, currentUrl);
+
+        // If the chain reaches ivaservizi, make one final GET to settle the session
+        if (next.includes("ivaservizi.agenziaentrate.gov.it") && !next.includes("nonauth")) {
+          try {
+            const final = await fetch(next, {
+              method: "GET",
+              headers: { Cookie: buildHeader(), "User-Agent": BROWSER_UA },
+              redirect: "manual",
+            });
+            ingestSetCookie(final.headers);
+            const finalLoc = final.headers.get("location") ?? "";
+            logger.info({ finalUrl: next, status: final.status, finalLoc }, "ivaservizi final hop");
+            // Follow one more hop if still redirecting within ivaservizi
+            if (final.status >= 300 && final.status < 400 && finalLoc) {
+              const final2 = await fetch(absUrl(finalLoc, next), {
+                method: "GET",
+                headers: { Cookie: buildHeader(), "User-Agent": BROWSER_UA },
+                redirect: "manual",
+              });
+              ingestSetCookie(final2.headers);
+              logger.info({ status: final2.status, url: absUrl(finalLoc, next) }, "ivaservizi hop 2");
+            }
+          } catch (err) {
+            logger.warn({ err }, "Error on final ivaservizi hop");
+          }
+          reachedIvaservizi = true;
+          break;
+        }
+
+        currentUrl = next;
+      } else {
+        // 200 or error — end of chain for this entry URL
+        if (currentUrl.includes("ivaservizi.agenziaentrate.gov.it") && !currentUrl.includes("nonauth")) {
+          reachedIvaservizi = true;
+        }
+        break;
+      }
+    }
+  }
+
+  const finalCookies = buildHeader();
+  logger.info(
+    { reachedIvaservizi, cookieCount: Object.keys(cookieJar).length, cookieNames: Object.keys(cookieJar).join(",") },
+    "SSO chain complete",
+  );
+  return finalCookies;
 }
 

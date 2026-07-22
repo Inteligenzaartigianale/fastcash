@@ -67,7 +67,7 @@ async function aePost(
   url: string,
   cookies: string,
   body: unknown,
-): Promise<{ ok: boolean; status: number; data: unknown }> {
+): Promise<{ ok: boolean; status: number; data: unknown; headers: Headers }> {
   const res = await fetch(url, {
     method: "POST",
     headers: {
@@ -79,7 +79,7 @@ async function aePost(
   });
   const ct = res.headers.get("content-type") ?? "";
   const data = ct.includes("json") ? await res.json() : await res.text();
-  return { ok: res.ok, status: res.status, data };
+  return { ok: res.ok, status: res.status, data, headers: res.headers };
 }
 
 // GET /ae/me
@@ -152,7 +152,8 @@ router.post("/ae/documenti", async (req, res): Promise<void> => {
   );
 
   if (!result.ok) {
-    req.log.warn({ status: result.status, data: result.data }, "AE documenti error");
+    const allowHeader = (result as { headers?: Headers }).headers?.get?.("allow") ?? "";
+    req.log.warn({ status: result.status, data: result.data, allow: allowHeader, url: `${AE_API}/doc/documenti/?v=${ts}` }, "AE documenti error");
     res.status(result.status).json({
       error: "Errore dall'AE durante l'invio del documento",
       details: JSON.stringify(result.data),

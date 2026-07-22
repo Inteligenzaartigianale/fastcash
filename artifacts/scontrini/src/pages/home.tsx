@@ -314,16 +314,16 @@ export default function HomePage() {
               <div className="bg-white p-5 rounded-md border shadow-sm space-y-4">
                 <div className="grid grid-cols-[1fr_120px] items-center gap-4">
                   <Label className="font-normal text-muted-foreground">Contanti €</Label>
-                  <Input type="number" step="0.01" min="0" className="text-right font-mono" value={pagamento.contanti || ""} onChange={(e) => setPagamento({...pagamento, contanti: parseFloat(e.target.value) || 0})} />
+                  <CurrencyInput className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm text-right font-mono" value={pagamento.contanti || 0} onChange={(v) => setPagamento({...pagamento, contanti: v})} />
                 </div>
                 <div className="grid grid-cols-[1fr_120px] items-center gap-4">
                   <Label className="font-normal text-muted-foreground">Elettronico €</Label>
-                  <Input type="number" step="0.01" min="0" className="text-right font-mono" value={pagamento.elettronico || ""} onChange={(e) => setPagamento({...pagamento, elettronico: parseFloat(e.target.value) || 0})} />
+                  <CurrencyInput className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm text-right font-mono" value={pagamento.elettronico || 0} onChange={(v) => setPagamento({...pagamento, elettronico: v})} />
                 </div>
                 <div className="pt-2 border-t space-y-4">
                   <div className="grid grid-cols-[1fr_120px] items-center gap-4">
                     <Label className="font-normal text-muted-foreground">Ticket Restaurant €</Label>
-                    <Input type="number" step="0.01" min="0" className="text-right font-mono" value={pagamento.ticketRestaurant || ""} onChange={(e) => setPagamento({...pagamento, ticketRestaurant: parseFloat(e.target.value) || 0})} />
+                    <CurrencyInput className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm text-right font-mono" value={pagamento.ticketRestaurant || 0} onChange={(v) => setPagamento({...pagamento, ticketRestaurant: v})} />
                   </div>
                   <div className="grid grid-cols-[1fr_180px] items-center gap-4">
                     <Label className="font-normal text-muted-foreground">Numero Ticket</Label>
@@ -333,7 +333,7 @@ export default function HomePage() {
                 <div className="pt-2 border-t space-y-4">
                   <div className="grid grid-cols-[1fr_120px] items-center gap-4">
                     <Label className="font-normal text-muted-foreground">Sconto a pagare €</Label>
-                    <Input type="number" step="0.01" min="0" className="text-right font-mono text-red-600" value={pagamento.scontoAPagare || ""} onChange={(e) => setPagamento({...pagamento, scontoAPagare: parseFloat(e.target.value) || 0})} />
+                    <CurrencyInput className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm text-right font-mono text-red-600" value={pagamento.scontoAPagare || 0} onChange={(v) => setPagamento({...pagamento, scontoAPagare: v})} />
                   </div>
                 </div>
               </div>
@@ -349,11 +349,11 @@ export default function HomePage() {
                 </div>
                 <div className="grid grid-cols-[1fr_120px] items-center gap-4">
                   <Label className="font-normal text-muted-foreground">Prestazioni di servizi €</Label>
-                  <Input type="number" step="0.01" min="0" className="text-right font-mono" value={nonRiscosso.prestazioniServizi || ""} onChange={(e) => setNonRiscosso({...nonRiscosso, prestazioniServizi: parseFloat(e.target.value) || 0})} />
+                  <CurrencyInput className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm text-right font-mono" value={nonRiscosso.prestazioniServizi || 0} onChange={(v) => setNonRiscosso({...nonRiscosso, prestazioniServizi: v})} />
                 </div>
                 <div className="grid grid-cols-[1fr_120px] items-center gap-4">
                   <Label className="font-normal text-muted-foreground">Credito cessione bene €</Label>
-                  <Input type="number" step="0.01" min="0" className="text-right font-mono" value={nonRiscosso.creditoCessioneBene || ""} onChange={(e) => setNonRiscosso({...nonRiscosso, creditoCessioneBene: parseFloat(e.target.value) || 0})} />
+                  <CurrencyInput className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm text-right font-mono" value={nonRiscosso.creditoCessioneBene || 0} onChange={(v) => setNonRiscosso({...nonRiscosso, creditoCessioneBene: v})} />
                 </div>
                 
                 <div className="pt-6">

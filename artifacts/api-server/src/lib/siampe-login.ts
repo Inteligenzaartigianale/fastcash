@@ -15,11 +15,24 @@ import { execSync } from "node:child_process";
 import { logger } from "./logger.js";
 
 function findSystemChromium(): string | undefined {
+  // Try nix-instantiate first (works on Replit NixOS where chromium isn't in PATH)
   try {
-    return execSync("which chromium || which chromium-browser || which google-chrome", {
-      encoding: "utf8",
-      stdio: ["pipe", "pipe", "pipe"],
-    }).trim().split("\n")[0];
+    const nixPath = execSync(
+      `nix-instantiate --eval -E 'builtins.toString (import <nixpkgs> {}).chromium + "/bin/chromium"'`,
+      { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"], timeout: 15000 },
+    ).trim().replace(/^"|"$/g, "");
+    if (nixPath && nixPath.includes("/chromium")) {
+      logger.info({ executablePath: nixPath }, "Found chromium via nix-instantiate");
+      return nixPath;
+    }
+  } catch { /* ignore */ }
+
+  // Fallback: which
+  try {
+    return execSync(
+      "which chromium || which chromium-browser || which google-chrome",
+      { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] },
+    ).trim().split("\n")[0];
   } catch {
     return undefined;
   }

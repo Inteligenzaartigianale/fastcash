@@ -123,16 +123,22 @@ function resolveNixChromium(): string {
   }
 }
 
-// ─── Browser singleton ────────────────────────────────────────────────────────
-// We spawn Chrome 92 manually and connect via puppeteer.connect() to avoid
-// puppeteer.launch() timeout issues (Puppeteer 25 CDP init incompatible with Chrome 92).
+// ─── Browser lifecycle (per-request, no singleton) ───────────────────────────
+// Each login spawns a fresh Chrome and kills it when done (success or failure).
+// This avoids port conflicts when consecutive logins happen.
 
-let browserInstance: Browser | null = null;
-let chromeProcess: ReturnType<typeof spawn> | null = null;
+const DEBUG_PORT = 19333;
 
-function spawnChrome(executablePath: string): Promise<string> {
+/** Kill any existing process on the debug port before spawning a new Chrome. */
+function killStaleChromeOnPort(): void {
+  try {
+    execSync(`fuser -k ${DEBUG_PORT}/tcp 2>/dev/null || true`, { stdio: "ignore", timeout: 3000 });
+  } catch { /* ignore */ }
+}
+
+/** Spawn Chrome and return the DevTools WebSocket URL. */
+function spawnChrome(executablePath: string): Promise<{ wsUrl: string; proc: ReturnType<typeof spawn> }> {
   return new Promise((resolve, reject) => {
-    const debugPort = 19333;
     const proc = spawn(executablePath, [
       "--headless",
       "--no-sandbox",
@@ -141,16 +147,15 @@ function spawnChrome(executablePath: string): Promise<string> {
       "--disable-gpu",
       "--no-first-run",
       "--disable-extensions",
-      `--remote-debugging-port=${debugPort}`,
-    ], {
-      stdio: ["ignore", "ignore", "pipe"],
-    });
-
-    chromeProcess = proc;
+      `--remote-debugging-port=${DEBUG_PORT}`,
+    ], { stdio: ["ignore", "ignore", "pipe"] });
 
     let wsUrl = "";
     const timer = setTimeout(() => {
-      if (!wsUrl) reject(new Error("Chrome did not emit DevTools URL within 15s"));
+      if (!wsUrl) {
+        proc.kill("SIGKILL");
+        reject(new Error("Chrome did not emit DevTools URL within 15s"));
+      }
     }, 15000);
 
     proc.stderr!.on("data", (chunk: Buffer) => {
@@ -159,32 +164,39 @@ function spawnChrome(executablePath: string): Promise<string> {
       if (match && !wsUrl) {
         wsUrl = match[1]!;
         clearTimeout(timer);
-        resolve(wsUrl);
+        resolve({ wsUrl, proc });
       }
     });
 
     proc.on("exit", (code) => {
-      if (!wsUrl) reject(new Error(`Chrome exited with code ${code} before emitting DevTools URL`));
-      browserInstance = null;
+      if (!wsUrl) reject(new Error(`Chrome exited (code ${code}) before emitting DevTools URL`));
     });
   });
 }
 
-async function getBrowser(): Promise<Browser> {
-  if (!browserInstance || !browserInstance.connected) {
-    const nixChromium = resolveNixChromium();
-    logger.info({ executablePath: nixChromium }, "Spawning Chrome and connecting via WebSocket");
+/** Spawn Chrome, connect Puppeteer, return browser + cleanup function. */
+async function startBrowser(): Promise<{ browser: Browser; cleanup: () => void }> {
+  killStaleChromeOnPort();
+  await new Promise((r) => setTimeout(r, 500)); // brief pause so port is free
 
-    const wsUrl = await spawnChrome(nixChromium);
-    logger.info({ wsUrl }, "Chrome ready, connecting Puppeteer");
+  const nixChromium = resolveNixChromium();
+  logger.info({ executablePath: nixChromium }, "Spawning Chrome and connecting via WebSocket");
 
-    browserInstance = await puppeteer.connect({
-      browserWSEndpoint: wsUrl,
-      protocolTimeout: 180000,
-    });
-    logger.info("Puppeteer connected to Chrome successfully");
-  }
-  return browserInstance;
+  const { wsUrl, proc } = await spawnChrome(nixChromium);
+  logger.info({ wsUrl }, "Chrome ready, connecting Puppeteer");
+
+  const browser = await puppeteer.connect({
+    browserWSEndpoint: wsUrl,
+    protocolTimeout: 180000,
+  });
+  logger.info("Puppeteer connected to Chrome successfully");
+
+  const cleanup = () => {
+    try { browser.disconnect(); } catch { /* ignore */ }
+    try { proc.kill("SIGKILL"); } catch { /* ignore */ }
+  };
+
+  return { browser, cleanup };
 }
 
 // ─── Login flow ───────────────────────────────────────────────────────────────
@@ -192,7 +204,7 @@ async function getBrowser(): Promise<Browser> {
 export async function loginWithSiampe(
   credentials: LoginCredentials,
 ): Promise<LoginCookies> {
-  const browser = await getBrowser();
+  const { browser, cleanup } = await startBrowser();
   const page = await browser.newPage();
 
   try {
@@ -334,7 +346,6 @@ export async function loginWithSiampe(
     }
 
     logger.info({ ragioneSociale: cookies.ragioneSociale }, "SIAMPE login successful");
-    await page.close();
     return cookies;
   } catch (err) {
     logger.error({ err, url: page.url() }, "SIAMPE login failed");
@@ -343,10 +354,10 @@ export async function loginWithSiampe(
       "document.body?.innerHTML?.substring(0,2000)||''",
     ).catch(() => "") as string;
     logger.error({ html }, "Page HTML at failure");
-    await page.close().catch(() => {});
-    // Reset browser so next attempt starts fresh
-    browserInstance = null;
     throw err;
+  } finally {
+    await page.close().catch(() => {});
+    cleanup();
   }
 }
 
@@ -442,37 +453,3 @@ async function extractCookiesAndInfo(
   };
 }
 
-async function fillInput(
-  page: Page,
-  value: string,
-  selectors: string[],
-): Promise<void> {
-  for (const selector of selectors) {
-    try {
-      await page.waitForSelector(selector, { timeout: 5000 });
-      await page.evaluate(
-        `(function() { var el = document.querySelector('${selector.replace(/'/g, "\\'")}'); if (el) { el.value = ''; el.dispatchEvent(new Event('input', { bubbles: true })); } })()`,
-      );
-      await page.type(selector, value, { delay: 30 });
-      return;
-    } catch { continue; }
-  }
-  throw new Error(`Could not find input: ${selectors.join(", ")}`);
-}
-
-async function clickAndWait(
-  page: Page,
-  selectors: string[],
-): Promise<void> {
-  for (const selector of selectors) {
-    try {
-      await page.waitForSelector(selector, { timeout: 5000 });
-      await Promise.all([
-        page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 30000 }),
-        page.click(selector),
-      ]);
-      return;
-    } catch { continue; }
-  }
-  throw new Error(`Could not find button: ${selectors.join(", ")}`);
-}

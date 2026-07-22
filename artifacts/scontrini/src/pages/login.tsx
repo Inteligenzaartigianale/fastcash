@@ -87,6 +87,9 @@ export default function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 disabled={loginMutation.isPending}
+                autoCapitalize="none"
+                autoCorrect="off"
+                autoComplete="current-password"
                 data-testid="input-login-password"
               />
             </div>

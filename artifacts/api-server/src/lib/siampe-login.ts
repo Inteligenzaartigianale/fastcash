@@ -388,53 +388,49 @@ export async function loginWithSiampe(
     await page.screenshot({ path: "/tmp/siampe-step5-after-login.png", fullPage: false }).catch(() => {});
     logger.info({ url: page.url() }, "Landed on AE after login");
 
-    // Extract cookies captured so far (SIAMPE + portale cookies from Puppeteer)
+    // Brief wait for portale to finish setting server-side session cookies
+    await new Promise((r) => setTimeout(r, 1500));
+
+    // Navigate Puppeteer to the DCO URL — this is the critical step that
+    // triggers WebSphere SSO: Chrome sends SIAMPE cookies to ivaservizi,
+    // WebSphere validates them and issues LtpaToken2 for ivaservizi.
+    logger.info("Navigating Puppeteer to DCO URL to trigger WebSphere SSO");
+    await page.goto(DCO_URL, { waitUntil: "domcontentloaded", timeout: 20000 }).catch(() => {});
+    await new Promise((r) => setTimeout(r, 2000)); // wait for SSO cookies to settle
+
+    logger.info({ url: page.url() }, "DCO navigation complete");
+
+    // Extract all cookies captured by Puppeteer (should now include LtpaToken2)
     const puppeteerCookies = await page.cookies();
     logger.info(
       { count: puppeteerCookies.length, names: puppeteerCookies.map((c) => `${c.domain}:${c.name}`) },
-      "Puppeteer cookies after portale landing",
+      "Puppeteer cookies after DCO navigation",
     );
 
     const siampeCookieHeader = puppeteerCookies
-      .filter((c) => c.domain.includes("agenziaentrate.gov.it"))
+      .filter((c) => c.domain.includes("agenziaentrate.gov.it") || c.domain.includes("ivaservizi"))
       .map((c) => `${c.name}=${c.value}`)
       .join("; ");
 
-    // Use Node.js fetch to follow portale → ivaservizi SSO redirect chain.
-    // Chrome 92 cannot render the portale SPA, but Node's fetch can follow
-    // the redirect chain and collect the ivaservizi session cookies.
+    // Additionally try Node.js fetch SSO chain to pick up any remaining
+    // ivaservizi-specific session cookies not available in Puppeteer
     const enrichedCookies = await followPortaleSSOToIvaservizi(siampeCookieHeader);
 
-    // Also set these cookies in Puppeteer so extractCookiesAndInfo can read them
-    const extraCookies = parseCookieHeader(enrichedCookies);
-    for (const [name, value] of Object.entries(extraCookies)) {
-      if (!siampeCookieHeader.includes(`${name}=`)) {
-        try {
-          await page.setCookie({ name, value, domain: "ivaservizi.agenziaentrate.gov.it", path: "/" });
-        } catch { /* ignore */ }
-      }
-    }
+    // Merge: Node.js fetch cookies take precedence for ivaservizi cookies
+    const finalCookieHeader = enrichedCookies || siampeCookieHeader;
 
-    const allCookies = await page.cookies();
-    logger.info(
-      { count: allCookies.length, names: allCookies.map((c) => `${c.domain}:${c.name}`) },
-      "Cookies after SSO chain",
-    );
+    if (!finalCookieHeader) {
+      throw new Error("Could not extract session cookies after login");
+    }
 
     const ragioneSociale = await page.evaluate(
       "document.querySelector('.utente, .user-info, [class*=\"utente\"], [class*=\"user\"]')?.textContent?.trim() || ''",
     ).catch(() => "") as string;
 
-    const cookieHeader = enrichedCookies || siampeCookieHeader;
-
-    if (!cookieHeader) {
-      throw new Error("Could not extract session cookies after login");
-    }
-
-    logger.info({ ragioneSociale, cookieLen: cookieHeader.length }, "SIAMPE login successful");
+    logger.info({ ragioneSociale, cookieLen: finalCookieHeader.length, cookieCount: Object.keys(parseCookieHeader(finalCookieHeader)).length }, "SIAMPE login successful");
 
     return {
-      cookieHeader,
+      cookieHeader: finalCookieHeader,
       ragioneSociale: ragioneSociale.split("\n")[0]?.trim() ?? "",
       partitaIva: credentials.codiceFiscale,
       codiceFiscale: credentials.codiceFiscale,

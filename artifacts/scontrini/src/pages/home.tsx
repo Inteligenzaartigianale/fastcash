@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
 import { formatCurrency } from "@/lib/utils";
+import { CurrencyInput } from "@/components/currency-input";
 import { LogOut, Plus, Trash2, FileText, Send } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { RigaDocumento, PagamentoInput, DocumentoInputCorrispettivoNonRiscosso } from "@workspace/api-client-react/src/generated/api.schemas";
@@ -239,7 +240,7 @@ export default function HomePage() {
                           <input type="text" className="table-cell-input" placeholder="Descrizione bene/servizio" value={r.descrizione} onChange={(e) => handleRigaChange(i, "descrizione", e.target.value)} />
                         </TableCell>
                         <TableCell>
-                          <input type="number" min="0" step="0.01" className="table-cell-input text-right font-mono" value={r.prezzoUnitario || ""} onChange={(e) => handleRigaChange(i, "prezzoUnitario", parseFloat(e.target.value))} />
+                          <CurrencyInput className="table-cell-input text-right font-mono" value={Number(r.prezzoUnitario) || 0} onChange={(v) => handleRigaChange(i, "prezzoUnitario", v)} />
                         </TableCell>
                         <TableCell className="p-1">
                           <Select value={r.aliquotaIva} onValueChange={(v) => handleRigaChange(i, "aliquotaIva", v)}>
@@ -257,7 +258,7 @@ export default function HomePage() {
                           </Select>
                         </TableCell>
                         <TableCell>
-                          <input type="number" min="0" step="0.01" className="table-cell-input text-right text-red-600 font-mono" value={r.sconto || ""} onChange={(e) => handleRigaChange(i, "sconto", parseFloat(e.target.value))} />
+                          <CurrencyInput className="table-cell-input text-right text-red-600 font-mono" value={Number(r.sconto) || 0} onChange={(v) => handleRigaChange(i, "sconto", v)} />
                         </TableCell>
                         <TableCell className="text-center">
                           <div className="flex justify-center items-center h-full">

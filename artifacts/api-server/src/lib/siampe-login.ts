@@ -11,7 +11,19 @@
  */
 
 import puppeteer, { type Browser, type Page } from "puppeteer";
+import { execSync } from "node:child_process";
 import { logger } from "./logger.js";
+
+function findSystemChromium(): string | undefined {
+  try {
+    return execSync("which chromium || which chromium-browser || which google-chrome", {
+      encoding: "utf8",
+      stdio: ["pipe", "pipe", "pipe"],
+    }).trim().split("\n")[0];
+  } catch {
+    return undefined;
+  }
+}
 
 const DCO_URL =
   "https://ivaservizi.agenziaentrate.gov.it/ser/documenticommercialionline/?v=1729523483132#/generazione/wizard2";
@@ -33,9 +45,11 @@ let browserInstance: Browser | null = null;
 
 async function getBrowser(): Promise<Browser> {
   if (!browserInstance || !browserInstance.connected) {
-    logger.info("Launching Puppeteer browser");
+    const executablePath = findSystemChromium();
+    logger.info({ executablePath }, "Launching Puppeteer browser");
     browserInstance = await puppeteer.launch({
       headless: true,
+      executablePath,
       args: [
         "--no-sandbox",
         "--disable-setuid-sandbox",

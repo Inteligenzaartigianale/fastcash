@@ -3,20 +3,24 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: API specification for App Scontrini Fiscali
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: auth
+    description: Fisconline authentication
+  - name: documenti
+    description: Documenti commerciali (DCO)
+
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +28,140 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Login via Fisconline (CF + password + PIN)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginInput"
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResult"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Login automation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/status:
+    get:
+      operationId: getAuthStatus
+      tags: [auth]
+      summary: Check current session status
+      responses:
+        "200":
+          description: Session status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthStatus"
+
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: Logout and clear session
+      responses:
+        "200":
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /ae/me:
+    get:
+      operationId: getMe
+      tags: [documenti]
+      summary: Get logged-in user and company info from AE
+      responses:
+        "200":
+          description: User and company info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UtenteInfo"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /ae/documenti:
+    post:
+      operationId: inviaDocumento
+      tags: [documenti]
+      summary: Invia documento commerciale ad AE (DCW10)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DocumentoInput"
+      responses:
+        "200":
+          description: Documento inviato con successo
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentoResult"
+        "400":
+          description: Dati non validi
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Sessione scaduta
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /ae/stampa/{numeroProgressivo}:
+    get:
+      operationId: getStampa
+      tags: [documenti]
+      summary: Scarica PDF del documento commerciale
+      parameters:
+        - name: numeroProgressivo
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: PDF del documento
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        "401":
+          description: Sessione scaduta
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +172,154 @@ components:
       required:
         - status
 
+    LoginInput:
+      type: object
+      required: [codiceFiscale, password, pin]
+      properties:
+        codiceFiscale:
+          type: string
+          description: Codice fiscale del titolare
+        password:
+          type: string
+          description: Password Fisconline
+        pin:
+          type: string
+          description: PIN Fisconline
+
+    LoginResult:
+      type: object
+      required: [success, ragioneSociale, partitaIva]
+      properties:
+        success:
+          type: boolean
+        ragioneSociale:
+          type: string
+        partitaIva:
+          type: string
+        codiceFiscale:
+          type: string
+
+    AuthStatus:
+      type: object
+      required: [authenticated]
+      properties:
+        authenticated:
+          type: boolean
+        ragioneSociale:
+          type: ["string", "null"]
+        partitaIva:
+          type: ["string", "null"]
+        expiresAt:
+          type: ["string", "null"]
+          format: date-time
+
+    UtenteInfo:
+      type: object
+      properties:
+        ragioneSociale:
+          type: string
+        partitaIva:
+          type: string
+        codiceFiscale:
+          type: string
+        indirizzo:
+          type: string
+        comune:
+          type: string
+        cap:
+          type: string
+        provincia:
+          type: string
+
+    RigaDocumento:
+      type: object
+      required: [quantita, descrizione, prezzoUnitario, aliquotaIva]
+      properties:
+        quantita:
+          type: number
+        descrizione:
+          type: string
+        prezzoUnitario:
+          type: number
+        aliquotaIva:
+          type: string
+          description: "Es: 22, 10, 4, Non soggette, Esente"
+        sconto:
+          type: number
+        omaggio:
+          type: boolean
+
+    PagamentoInput:
+      type: object
+      properties:
+        contanti:
+          type: number
+        elettronico:
+          type: number
+        ticketRestaurant:
+          type: number
+        numeroTicket:
+          type: string
+        scontoAPagare:
+          type: number
+        documentoCollegato:
+          type: string
+
+    DocumentoInput:
+      type: object
+      required: [tipoOperazione, righe, pagamento]
+      properties:
+        tipoOperazione:
+          type: string
+          description: "Es: Vendita/Prestazione, Reso"
+        codiceLotteria:
+          type: string
+        righe:
+          type: array
+          items:
+            $ref: "#/components/schemas/RigaDocumento"
+        pagamento:
+          $ref: "#/components/schemas/PagamentoInput"
+        flagDocCommPerRegalo:
+          type: boolean
+        corrispettivoNonRiscosso:
+          type: object
+          properties:
+            emissioneFattura:
+              type: boolean
+            prestazioniServizi:
+              type: number
+            creditoCessioneBene:
+              type: number
+
+    DocumentoResult:
+      type: object
+      required: [success, numeroDocumento]
+      properties:
+        success:
+          type: boolean
+        numeroDocumento:
+          type: string
+          description: "Es: DCW2026/1252-9663"
+        numeroProgressivo:
+          type: string
+        dataEmissione:
+          type: string
+        pdfUrl:
+          type: ["string", "null"]
+
+    SuccessResponse:
+      type: object
+      required: [success]
+      properties:
+        success:
+          type: boolean
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+        details:
+          type: ["string", "null"]

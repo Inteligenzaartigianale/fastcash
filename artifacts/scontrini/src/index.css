@@ -1,0 +1,143 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@plugin "@tailwindcss/typography";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-card-border: hsl(var(--card-border));
+
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-popover-border: hsl(var(--popover-border));
+
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-primary-border: var(--primary-border);
+
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-secondary-border: var(--secondary-border);
+
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-muted-border: var(--muted-border);
+
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-accent-border: var(--accent-border);
+
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-destructive-border: var(--destructive-border);
+
+  --font-sans: 'Inter', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+:root {
+  --background: 210 20% 98%; /* Faint cool gray */
+  --foreground: 220 30% 15%; /* Dark blue-gray */
+  
+  --card: 0 0% 100%;
+  --card-foreground: 220 30% 15%;
+  --card-border: 214 20% 90%;
+  
+  --popover: 0 0% 100%;
+  --popover-foreground: 220 30% 15%;
+  --popover-border: 214 20% 90%;
+  
+  --primary: 215 60% 30%; /* Deep government blue */
+  --primary-foreground: 0 0% 100%;
+  
+  --secondary: 215 20% 92%;
+  --secondary-foreground: 215 60% 30%;
+  
+  --muted: 214 20% 94%;
+  --muted-foreground: 215 15% 45%;
+  
+  --accent: 35 85% 55%; /* Warm gold/ochre accent */
+  --accent-foreground: 0 0% 100%;
+  
+  --destructive: 0 65% 45%;
+  --destructive-foreground: 0 0% 100%;
+  
+  --border: 214 20% 86%;
+  --input: 214 20% 86%;
+  --ring: 215 60% 30%;
+
+  --radius: 0.3rem; /* Structured, slightly sharp corners */
+}
+
+.dark {
+  --background: 220 30% 10%;
+  --foreground: 210 20% 90%;
+  
+  --card: 220 30% 14%;
+  --card-foreground: 210 20% 90%;
+  --card-border: 220 20% 25%;
+  
+  --popover: 220 30% 14%;
+  --popover-foreground: 210 20% 90%;
+  --popover-border: 220 20% 25%;
+  
+  --primary: 215 60% 50%;
+  --primary-foreground: 0 0% 100%;
+  
+  --secondary: 220 25% 25%;
+  --secondary-foreground: 210 20% 90%;
+  
+  --muted: 220 20% 20%;
+  --muted-foreground: 215 15% 65%;
+  
+  --accent: 35 85% 50%;
+  --accent-foreground: 220 30% 10%;
+  
+  --destructive: 0 50% 45%;
+  --destructive-foreground: 0 0% 100%;
+  
+  --border: 220 20% 25%;
+  --input: 220 20% 25%;
+  --ring: 215 60% 50%;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply font-sans antialiased bg-background text-foreground;
+  }
+}
+
+.table-cell-input {
+  @apply w-full border-none bg-transparent px-2 py-1 text-sm h-8 rounded-none focus:ring-1 focus:ring-primary focus:bg-white;
+}
+.table-cell-input[readonly] {
+  @apply bg-transparent focus:ring-0 text-muted-foreground;
+}
+
+/* Chrome, Safari, Edge, Opera hide arrows on number input */
+input::-webkit-outer-spin-button,
+input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+/* Firefox */
+input[type=number] {
+  -moz-appearance: textfield;
+}

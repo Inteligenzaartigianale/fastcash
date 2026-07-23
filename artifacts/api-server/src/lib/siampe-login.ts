@@ -388,90 +388,123 @@ export async function loginWithSiampe(
     await page.screenshot({ path: "/tmp/siampe-step5-after-login.png", fullPage: false }).catch(() => {});
     logger.info({ url: page.url() }, "Landed on AE after login");
 
-    // Wait for portale to finish loading its Liferay JS
-    await new Promise((r) => setTimeout(r, 4000));
+    // Wait for portale to begin rendering Liferay JS
+    await new Promise((r) => setTimeout(r, 3000));
     await page.screenshot({ path: "/tmp/portale-home.png", fullPage: false }).catch(() => {});
 
-    // Strategy: navigate to the Liferay portale deep-link for DCO.
-    // When authenticated, Liferay's JS executes and redirects the browser
-    // to ivaservizi, establishing the cross-domain WebSphere session.
-    // This mirrors exactly what happens when the user clicks "Documenti Commerciali"
-    // in the portale menu.
-    const PORTALE_DCO_DEEPLINK =
-      "https://portale.agenziaentrate.gov.it/portale/web/guest/schede/comunicazioni/documenti-commerciali-online";
+    // ── Intercept network requests so we can capture any automatic
+    //    navigation toward ivaservizi that Liferay JS might trigger ──────────
+    let interceptedIvaserviziUrl: string | null = null;
+    const interceptedRequests: string[] = [];
 
-    logger.info("Navigating to portale DCO deep-link to trigger Liferay SSO redirect");
-    await page.goto(PORTALE_DCO_DEEPLINK, { waitUntil: "networkidle0", timeout: 30000 }).catch(() => {});
-    await new Promise((r) => setTimeout(r, 3000));
-    logger.info({ url: page.url() }, "After portale DCO deep-link navigation");
-    await page.screenshot({ path: "/tmp/portale-dco-deeplink.png", fullPage: false }).catch(() => {});
+    await page.setRequestInterception(true).catch(() => {});
+    page.on("request", (req) => {
+      const u = req.url();
+      interceptedRequests.push(u);
+      if (u.includes("ivaservizi.agenziaentrate.gov.it") && !interceptedIvaserviziUrl) {
+        interceptedIvaserviziUrl = u;
+        logger.info({ interceptedIvaserviziUrl }, "Puppeteer intercepted ivaservizi request");
+      }
+      req.continue().catch(() => {});
+    });
 
-    // If Liferay redirected us to ivaservizi — great, session is established.
-    // If not (still on portale or 403), look for clickable DCO links on the page.
-    if (!page.url().includes("ivaservizi")) {
-      logger.info("Still not on ivaservizi — scanning portale page for DCO links");
+    // ── Read raw HTML of portale home — look for ivaservizi URLs in
+    //    <script> blocks, data-* attrs, onclick handlers, window.* config ─────
+    const portaleHtml = await page.content().catch(() => "") as string;
 
-      // Collect all links from the current page
-      const allLinks = await page.evaluate(`(function() {
-        var result = [];
-        var els = Array.from(document.querySelectorAll('a[href]'));
-        for (var i = 0; i < els.length; i++) {
-          var href = els[i].href || '';
-          if (href.includes('ivaservizi') || href.includes('documenticommerciali') ||
-              href.includes('corrispettivi') || href.includes('fattura-e-corrispettivi')) {
-            result.push(href);
-          }
-        }
-        return result;
-      })()`) as string[];
+    // Extract any ivaservizi URL patterns from the raw HTML
+    const ivaserviziMatches = portaleHtml.match(
+      /https?:\/\/ivaservizi\.agenziaentrate\.gov\.it\/[^\s"'<>]*/g,
+    ) ?? [];
+    const onclickMatches = portaleHtml.match(/onclick="[^"]*corrispettivi[^"]*"/gi) ?? [];
+    const hrefMatches = portaleHtml.match(/href="[^"]*(?:ivaservizi|corrispettivi|documenticommerciali)[^"]*"/gi) ?? [];
+    const dataMatches = portaleHtml.match(/data-[a-z-]+=["'][^"']*(?:ivaservizi|corrispettivi)[^"']*["']/gi) ?? [];
 
-      logger.info({ count: allLinks.length, links: allLinks.slice(0, 5) }, "DCO links found on portale page");
+    logger.info(
+      {
+        htmlLen: portaleHtml.length,
+        ivaserviziUrls: [...new Set(ivaserviziMatches)].slice(0, 5),
+        onclickMatches: onclickMatches.slice(0, 3),
+        hrefMatches: hrefMatches.slice(0, 5),
+        dataMatches: dataMatches.slice(0, 3),
+      },
+      "Portale home raw HTML analysis",
+    );
 
-      if (allLinks.length > 0) {
-        const targetLink = allLinks[0]!;
-        logger.info({ targetLink }, "Clicking first DCO link on portale");
-        await page.goto(targetLink, { waitUntil: "networkidle0", timeout: 30000 }).catch(() => {});
+    // Log first 4000 chars of HTML so we can read it in logs
+    logger.info({ html: portaleHtml.substring(0, 2000) }, "Portale home HTML part 1");
+    logger.info({ html: portaleHtml.substring(2000, 4000) }, "Portale home HTML part 2");
+
+    // ── Strategy 1: if we already found an ivaservizi URL in HTML, use it ───
+    const firstIvaserviziUrl = ivaserviziMatches.find(
+      (u) => !u.includes("nonauth") && u.includes("documenticommercialionline"),
+    ) ?? null;
+
+    if (firstIvaserviziUrl) {
+      logger.info({ url: firstIvaserviziUrl }, "Found ivaservizi URL in portale HTML — navigating");
+      await page.goto(firstIvaserviziUrl, { waitUntil: "networkidle0", timeout: 30000 }).catch(() => {});
+      await new Promise((r) => setTimeout(r, 3000));
+    }
+
+    if (!page.url().includes("ivaservizi") || page.url().includes("nonauth")) {
+      // ── Strategy 2: navigate portale DCO deep-link, wait 10s for Liferay JS ─
+      const PORTALE_DCO_DEEPLINK =
+        "https://portale.agenziaentrate.gov.it/portale/web/guest/schede/comunicazioni/documenti-commerciali-online";
+
+      logger.info("Navigating to portale DCO deep-link (10s wait for Liferay JS)");
+      await page.goto(PORTALE_DCO_DEEPLINK, { waitUntil: "networkidle0", timeout: 30000 }).catch(() => {});
+      await new Promise((r) => setTimeout(r, 10000)); // give Liferay JS time to execute
+      logger.info({ url: page.url(), intercepted: interceptedIvaserviziUrl }, "After portale DCO deep-link + 10s wait");
+      await page.screenshot({ path: "/tmp/portale-dco-deeplink.png", fullPage: false }).catch(() => {});
+
+      // Read HTML of the DCO deep-link page
+      const dcoPageHtml = await page.content().catch(() => "") as string;
+      const dcoIvaserviziUrls = dcoPageHtml.match(
+        /https?:\/\/ivaservizi\.agenziaentrate\.gov\.it\/[^\s"'<>]*/g,
+      ) ?? [];
+      logger.info(
+        { htmlLen: dcoPageHtml.length, ivaserviziUrls: [...new Set(dcoIvaserviziUrls)].slice(0, 5) },
+        "Portale DCO deep-link HTML analysis",
+      );
+      logger.info({ html: dcoPageHtml.substring(0, 3000) }, "Portale DCO deep-link HTML");
+    }
+
+    if (!page.url().includes("ivaservizi") || page.url().includes("nonauth")) {
+      // ── Strategy 3: if an ivaservizi request was intercepted, navigate to it ─
+      if (interceptedIvaserviziUrl && !interceptedIvaserviziUrl.includes("nonauth")) {
+        logger.info({ interceptedIvaserviziUrl }, "Using intercepted ivaservizi URL");
+        await page.goto(interceptedIvaserviziUrl, { waitUntil: "networkidle0", timeout: 30000 }).catch(() => {});
         await new Promise((r) => setTimeout(r, 3000));
-        logger.info({ url: page.url() }, "After clicking portale DCO link");
-      } else {
-        // Last resort: go back to portale home and look for clickable elements
-        logger.warn("No DCO links found — navigating portale home and clicking DCO button");
-        await page.goto("https://portale.agenziaentrate.gov.it/PortaleWeb/home", {
-          waitUntil: "networkidle0", timeout: 30000,
-        }).catch(() => {});
-        await new Promise((r) => setTimeout(r, 5000)); // extra wait for Liferay portlets
-
-        await page.screenshot({ path: "/tmp/portale-home-v2.png", fullPage: false }).catch(() => {});
-
-        // Collect all links again from portale home
-        const homeLinks = await page.evaluate(`(function() {
-          var result = [];
-          var els = Array.from(document.querySelectorAll('a[href]'));
-          for (var i = 0; i < els.length; i++) {
-            var href = els[i].href || '';
-            var txt = (els[i].textContent || '').toLowerCase().trim();
-            if (href.includes('ivaservizi') || href.includes('documenticommerciali') ||
-                href.includes('corrispettivi') || txt.includes('corrispettivi') ||
-                txt.includes('documenti commerciali') || txt.includes('fattura e corrispettivi')) {
-              result.push({ href: href, text: txt.substring(0, 80) });
-            }
-          }
-          return result;
-        })()`) as Array<{ href: string; text: string }>;
-
-        logger.info({ links: homeLinks }, "DCO links found on portale home");
-
-        if (homeLinks.length > 0) {
-          await page.goto(homeLinks[0]!.href, { waitUntil: "networkidle0", timeout: 30000 }).catch(() => {});
-          await new Promise((r) => setTimeout(r, 3000));
-          logger.info({ url: page.url() }, "After clicking home DCO link");
-        }
       }
     }
 
-    // Check final landing URL
+    // ── Strategy 4: try known Liferay portlet action URLs that may redirect ──
+    if (!page.url().includes("ivaservizi") || page.url().includes("nonauth")) {
+      const PORTLET_URLS = [
+        "https://portale.agenziaentrate.gov.it/portale/web/guest/home/-/portlet_layout/view/5701",
+        "https://portale.agenziaentrate.gov.it/portale/c/portale_agenziaentrate/portlets/documenticommerciali",
+        "https://portale.agenziaentrate.gov.it/portale/group/guest/home/-/portlet_layout/view/5701",
+      ];
+
+      for (const u of PORTLET_URLS) {
+        if (page.url().includes("ivaservizi") && !page.url().includes("nonauth")) break;
+        logger.info({ url: u }, "Trying portlet URL");
+        await page.goto(u, { waitUntil: "networkidle0", timeout: 15000 }).catch(() => {});
+        await new Promise((r) => setTimeout(r, 3000));
+        logger.info({ url: page.url() }, "After portlet URL navigation");
+      }
+    }
+
+    // ── Log all unique intercepted requests for diagnosis ────────────────────
+    const uniqueReqs = [...new Set(interceptedRequests)];
+    const ivaReqs = uniqueReqs.filter((u) => u.includes("ivaservizi") || u.includes("agenziaentrate.gov.it"));
+    logger.info({ count: ivaReqs.length, sample: ivaReqs.slice(0, 20) }, "All intercepted AE requests");
+
+    // Disable request interception before extracting cookies
+    await page.setRequestInterception(false).catch(() => {});
+
     const finalUrl = page.url();
-    logger.info({ url: finalUrl }, "Final URL after DCO navigation attempts");
+    logger.info({ url: finalUrl, onIvaservizi: finalUrl.includes("ivaservizi") }, "Final URL after DCO navigation");
     await page.screenshot({ path: "/tmp/dco-final.png", fullPage: false }).catch(() => {});
 
     // Extract all cookies captured by Puppeteer (should now include LtpaToken2)

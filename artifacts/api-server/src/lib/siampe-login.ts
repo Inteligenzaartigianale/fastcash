@@ -388,123 +388,156 @@ export async function loginWithSiampe(
     await page.screenshot({ path: "/tmp/siampe-step5-after-login.png", fullPage: false }).catch(() => {});
     logger.info({ url: page.url() }, "Landed on AE after login");
 
-    // Wait for portale to begin rendering Liferay JS
-    await new Promise((r) => setTimeout(r, 3000));
+    // Wait for portale home to fully render (Chrome 92 renders it correctly,
+    // confirmed by screenshots — the page shows "Area riservata" with user info
+    // and a "Servizi" section with a search box)
+    await new Promise((r) => setTimeout(r, 6000));
     await page.screenshot({ path: "/tmp/portale-home.png", fullPage: false }).catch(() => {});
 
-    // ── Intercept network requests so we can capture any automatic
-    //    navigation toward ivaservizi that Liferay JS might trigger ──────────
-    let interceptedIvaserviziUrl: string | null = null;
-    const interceptedRequests: string[] = [];
-
-    await page.setRequestInterception(true).catch(() => {});
-    page.on("request", (req) => {
-      const u = req.url();
-      interceptedRequests.push(u);
-      if (u.includes("ivaservizi.agenziaentrate.gov.it") && !interceptedIvaserviziUrl) {
-        interceptedIvaserviziUrl = u;
-        logger.info({ interceptedIvaserviziUrl }, "Puppeteer intercepted ivaservizi request");
+    // ── Intercept responses to capture Set-Cookie from ivaservizi ────────────
+    // When Chrome follows the DCO link and lands on ivaservizi, the server
+    // will send Set-Cookie headers (FATSC, B2BCookie, JSESSIONID).
+    // page.cookies() collects these automatically, but we also log them here.
+    page.on("response", (res) => {
+      const url = res.url();
+      if (url.includes("ivaservizi.agenziaentrate.gov.it")) {
+        const sc = res.headers()["set-cookie"];
+        if (sc) logger.info({ url, setCookie: sc.substring(0, 200) }, "ivaservizi Set-Cookie received");
       }
-      req.continue().catch(() => {});
     });
 
-    // ── Read raw HTML of portale home — look for ivaservizi URLs in
-    //    <script> blocks, data-* attrs, onclick handlers, window.* config ─────
-    const portaleHtml = await page.content().catch(() => "") as string;
+    // ── Strategy 1: click "Servizi" menu then find DCO link ─────────────────
+    // The portale home has a "Servizi" section with a search box.
+    // We look for a link whose text contains "Fattura", "corrispettivi",
+    // "Documenti Commerciali", or an href pointing to ivaservizi.
+    logger.info("Scanning portale home for DCO/Fattura service link");
 
-    // Extract any ivaservizi URL patterns from the raw HTML
-    const ivaserviziMatches = portaleHtml.match(
-      /https?:\/\/ivaservizi\.agenziaentrate\.gov\.it\/[^\s"'<>]*/g,
-    ) ?? [];
-    const onclickMatches = portaleHtml.match(/onclick="[^"]*corrispettivi[^"]*"/gi) ?? [];
-    const hrefMatches = portaleHtml.match(/href="[^"]*(?:ivaservizi|corrispettivi|documenticommerciali)[^"]*"/gi) ?? [];
-    const dataMatches = portaleHtml.match(/data-[a-z-]+=["'][^"']*(?:ivaservizi|corrispettivi)[^"']*["']/gi) ?? [];
+    const dcoInfo = await page.evaluate(`(function() {
+      var keywords = ['fattura e corrispettivi', 'documenti commerciali', 'corrispettivi', 'fattura'];
+      var links = Array.from(document.querySelectorAll('a'));
+      for (var i = 0; i < links.length; i++) {
+        var txt = (links[i].textContent || '').toLowerCase().trim();
+        var href = links[i].href || '';
+        if (href.includes('ivaservizi') || keywords.some(function(k){ return txt.includes(k); })) {
+          var r = links[i].getBoundingClientRect();
+          return { href: href, text: txt.substring(0, 80), x: Math.round(r.left + r.width/2), y: Math.round(r.top + r.height/2) };
+        }
+      }
+      // Also check buttons and clickable elements
+      var clickables = Array.from(document.querySelectorAll('button, [role="button"], [onclick]'));
+      for (var j = 0; j < clickables.length; j++) {
+        var ctxt = (clickables[j].textContent || '').toLowerCase().trim();
+        if (keywords.some(function(k){ return ctxt.includes(k); })) {
+          var cr = clickables[j].getBoundingClientRect();
+          return { href: null, text: ctxt.substring(0, 80), x: Math.round(cr.left + cr.width/2), y: Math.round(cr.top + cr.height/2) };
+        }
+      }
+      return null;
+    })()`) as { href: string | null; text: string; x: number; y: number } | null;
 
-    logger.info(
-      {
-        htmlLen: portaleHtml.length,
-        ivaserviziUrls: [...new Set(ivaserviziMatches)].slice(0, 5),
-        onclickMatches: onclickMatches.slice(0, 3),
-        hrefMatches: hrefMatches.slice(0, 5),
-        dataMatches: dataMatches.slice(0, 3),
-      },
-      "Portale home raw HTML analysis",
-    );
+    logger.info({ dcoInfo }, "DCO service link scan result");
 
-    // Log first 4000 chars of HTML so we can read it in logs
-    logger.info({ html: portaleHtml.substring(0, 2000) }, "Portale home HTML part 1");
-    logger.info({ html: portaleHtml.substring(2000, 4000) }, "Portale home HTML part 2");
-
-    // ── Strategy 1: if we already found an ivaservizi URL in HTML, use it ───
-    const firstIvaserviziUrl = ivaserviziMatches.find(
-      (u) => !u.includes("nonauth") && u.includes("documenticommercialionline"),
-    ) ?? null;
-
-    if (firstIvaserviziUrl) {
-      logger.info({ url: firstIvaserviziUrl }, "Found ivaservizi URL in portale HTML — navigating");
-      await page.goto(firstIvaserviziUrl, { waitUntil: "networkidle0", timeout: 30000 }).catch(() => {});
+    if (dcoInfo) {
+      if (dcoInfo.href && dcoInfo.href.includes("http")) {
+        logger.info({ href: dcoInfo.href }, "Navigating to DCO link via href");
+        await page.goto(dcoInfo.href, { waitUntil: "networkidle0", timeout: 30000 }).catch(() => {});
+      } else {
+        logger.info({ coords: { x: dcoInfo.x, y: dcoInfo.y } }, "Clicking DCO element via mouse");
+        await page.mouse.click(dcoInfo.x, dcoInfo.y);
+        await page.waitForNavigation({ waitUntil: "networkidle0", timeout: 15000 }).catch(() => {});
+      }
       await new Promise((r) => setTimeout(r, 3000));
+      logger.info({ url: page.url() }, "After DCO link click");
+      await page.screenshot({ path: "/tmp/after-dco-click.png", fullPage: false }).catch(() => {});
     }
 
+    // ── Strategy 2: use the "Cerca il servizio" search box ───────────────────
     if (!page.url().includes("ivaservizi") || page.url().includes("nonauth")) {
-      // ── Strategy 2: navigate portale DCO deep-link, wait 10s for Liferay JS ─
-      const PORTALE_DCO_DEEPLINK =
-        "https://portale.agenziaentrate.gov.it/portale/web/guest/schede/comunicazioni/documenti-commerciali-online";
+      logger.info("Trying 'Cerca il servizio' search box for DCO");
+      const searchInput = await page.$('input[placeholder*="cerca" i], input[placeholder*="servizio" i], input[type="search"]');
+      if (searchInput) {
+        await searchInput.click();
+        await page.keyboard.type("Fattura");
+        await new Promise((r) => setTimeout(r, 2000));
+        await page.screenshot({ path: "/tmp/portale-search.png", fullPage: false }).catch(() => {});
 
-      logger.info("Navigating to portale DCO deep-link (10s wait for Liferay JS)");
-      await page.goto(PORTALE_DCO_DEEPLINK, { waitUntil: "networkidle0", timeout: 30000 }).catch(() => {});
-      await new Promise((r) => setTimeout(r, 10000)); // give Liferay JS time to execute
-      logger.info({ url: page.url(), intercepted: interceptedIvaserviziUrl }, "After portale DCO deep-link + 10s wait");
-      await page.screenshot({ path: "/tmp/portale-dco-deeplink.png", fullPage: false }).catch(() => {});
+        // Click first result
+        const firstResult = await page.evaluate(`(function() {
+          var links = Array.from(document.querySelectorAll('a, [role="option"], li'));
+          for (var i = 0; i < links.length; i++) {
+            var txt = (links[i].textContent || '').toLowerCase();
+            var href = links[i].href || '';
+            if (txt.includes('fattura') || txt.includes('corrispettivi') || href.includes('ivaservizi')) {
+              var r = links[i].getBoundingClientRect();
+              if (r.width > 0) return { href: href, x: Math.round(r.left + r.width/2), y: Math.round(r.top + r.height/2), text: txt.substring(0, 60) };
+            }
+          }
+          return null;
+        })()`).catch(() => null) as { href: string; x: number; y: number; text: string } | null;
 
-      // Read HTML of the DCO deep-link page
-      const dcoPageHtml = await page.content().catch(() => "") as string;
-      const dcoIvaserviziUrls = dcoPageHtml.match(
-        /https?:\/\/ivaservizi\.agenziaentrate\.gov\.it\/[^\s"'<>]*/g,
-      ) ?? [];
-      logger.info(
-        { htmlLen: dcoPageHtml.length, ivaserviziUrls: [...new Set(dcoIvaserviziUrls)].slice(0, 5) },
-        "Portale DCO deep-link HTML analysis",
-      );
-      logger.info({ html: dcoPageHtml.substring(0, 3000) }, "Portale DCO deep-link HTML");
-    }
+        logger.info({ firstResult }, "Search result found");
 
-    if (!page.url().includes("ivaservizi") || page.url().includes("nonauth")) {
-      // ── Strategy 3: if an ivaservizi request was intercepted, navigate to it ─
-      if (interceptedIvaserviziUrl && !interceptedIvaserviziUrl.includes("nonauth")) {
-        logger.info({ interceptedIvaserviziUrl }, "Using intercepted ivaservizi URL");
-        await page.goto(interceptedIvaserviziUrl, { waitUntil: "networkidle0", timeout: 30000 }).catch(() => {});
-        await new Promise((r) => setTimeout(r, 3000));
+        if (firstResult) {
+          if (firstResult.href && firstResult.href.startsWith("http")) {
+            await page.goto(firstResult.href, { waitUntil: "networkidle0", timeout: 30000 }).catch(() => {});
+          } else {
+            await page.mouse.click(firstResult.x, firstResult.y);
+            await page.waitForNavigation({ waitUntil: "networkidle0", timeout: 15000 }).catch(() => {});
+          }
+          await new Promise((r) => setTimeout(r, 3000));
+          logger.info({ url: page.url() }, "After search result click");
+          await page.screenshot({ path: "/tmp/after-search-click.png", fullPage: false }).catch(() => {});
+        }
+      } else {
+        logger.warn("Search input not found on portale home");
       }
     }
 
-    // ── Strategy 4: try known Liferay portlet action URLs that may redirect ──
+    // ── Strategy 3: click "Servizi" menu item and look for DCO there ─────────
     if (!page.url().includes("ivaservizi") || page.url().includes("nonauth")) {
-      const PORTLET_URLS = [
-        "https://portale.agenziaentrate.gov.it/portale/web/guest/home/-/portlet_layout/view/5701",
-        "https://portale.agenziaentrate.gov.it/portale/c/portale_agenziaentrate/portlets/documenticommerciali",
-        "https://portale.agenziaentrate.gov.it/portale/group/guest/home/-/portlet_layout/view/5701",
-      ];
+      logger.info("Trying 'Servizi' menu click");
+      const serviziLink = await page.evaluate(`(function() {
+        var links = Array.from(document.querySelectorAll('a, button, nav a'));
+        for (var i = 0; i < links.length; i++) {
+          var txt = (links[i].textContent || '').trim();
+          if (txt === 'Servizi' || txt === 'I Servizi') {
+            var r = links[i].getBoundingClientRect();
+            return { x: Math.round(r.left + r.width/2), y: Math.round(r.top + r.height/2), text: txt };
+          }
+        }
+        return null;
+      })()`).catch(() => null) as { x: number; y: number; text: string } | null;
 
-      for (const u of PORTLET_URLS) {
-        if (page.url().includes("ivaservizi") && !page.url().includes("nonauth")) break;
-        logger.info({ url: u }, "Trying portlet URL");
-        await page.goto(u, { waitUntil: "networkidle0", timeout: 15000 }).catch(() => {});
+      if (serviziLink) {
+        logger.info({ serviziLink }, "Clicking Servizi menu");
+        await page.mouse.click(serviziLink.x, serviziLink.y);
         await new Promise((r) => setTimeout(r, 3000));
-        logger.info({ url: page.url() }, "After portlet URL navigation");
+        await page.screenshot({ path: "/tmp/portale-servizi-menu.png", fullPage: false }).catch(() => {});
+
+        // Now look for DCO in the expanded menu/page
+        const dcoAfterMenu = await page.evaluate(`(function() {
+          var links = Array.from(document.querySelectorAll('a'));
+          for (var i = 0; i < links.length; i++) {
+            var txt = (links[i].textContent || '').toLowerCase();
+            var href = links[i].href || '';
+            if (txt.includes('fattura') || txt.includes('corrispettivi') || href.includes('ivaservizi')) {
+              return { href: href, text: txt.trim().substring(0, 80) };
+            }
+          }
+          return null;
+        })()`).catch(() => null) as { href: string; text: string } | null;
+
+        logger.info({ dcoAfterMenu }, "DCO link after Servizi menu click");
+        if (dcoAfterMenu?.href?.startsWith("http")) {
+          await page.goto(dcoAfterMenu.href, { waitUntil: "networkidle0", timeout: 30000 }).catch(() => {});
+          await new Promise((r) => setTimeout(r, 3000));
+          logger.info({ url: page.url() }, "After Servizi menu DCO navigation");
+        }
       }
     }
-
-    // ── Log all unique intercepted requests for diagnosis ────────────────────
-    const uniqueReqs = [...new Set(interceptedRequests)];
-    const ivaReqs = uniqueReqs.filter((u) => u.includes("ivaservizi") || u.includes("agenziaentrate.gov.it"));
-    logger.info({ count: ivaReqs.length, sample: ivaReqs.slice(0, 20) }, "All intercepted AE requests");
-
-    // Disable request interception before extracting cookies
-    await page.setRequestInterception(false).catch(() => {});
 
     const finalUrl = page.url();
-    logger.info({ url: finalUrl, onIvaservizi: finalUrl.includes("ivaservizi") }, "Final URL after DCO navigation");
+    logger.info({ url: finalUrl, onIvaservizi: finalUrl.includes("ivaservizi") && !finalUrl.includes("nonauth") }, "Final URL after DCO navigation");
     await page.screenshot({ path: "/tmp/dco-final.png", fullPage: false }).catch(() => {});
 
     // Extract all cookies captured by Puppeteer (should now include LtpaToken2)

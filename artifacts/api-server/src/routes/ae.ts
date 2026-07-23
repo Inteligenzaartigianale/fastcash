@@ -74,6 +74,7 @@ async function aePost(
       ...BROWSER_HEADERS,
       Cookie: cookies,
       "Content-Type": "application/json;charset=UTF-8",
+      Origin: "https://ivaservizi.agenziaentrate.gov.it",
     },
     body: JSON.stringify(body),
   });
@@ -145,7 +146,7 @@ router.post("/ae/documenti", async (req, res): Promise<void> => {
   req.log.info({ tipoOperazione: input.tipoOperazione }, "Sending documento to AE");
 
   const result = await aePost(
-    `${AE_API}/doc/documenti/`,
+    `${AE_API}/doc/documenti/?v=${Date.now()}`,
     cookies,
     dcw10Payload,
   );

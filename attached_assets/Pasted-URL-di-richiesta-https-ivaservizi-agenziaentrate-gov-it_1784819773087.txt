@@ -1,0 +1,60 @@
+URL di richiesta
+https://ivaservizi.agenziaentrate.gov.it/ser/api/messaggistica/v1/ul/me/totale?v=1784819176290
+Metodo di richiesta
+GET
+Codice di stato
+200 OK
+Indirizzo remoto
+217.175.50.82:443
+Norme sui referrer
+strict-origin-when-cross-origin
+connection
+Keep-Alive
+content-language
+en-US
+content-type
+application/json
+date
+Thu, 23 Jul 2026 15:06:27 GMT
+keep-alive
+timeout=10, max=91
+transfer-encoding
+chunked
+x-powered-by
+Servlet/3.0
+accept
+application/json, text/plain, */*
+accept-encoding
+gzip, deflate, br, zstd
+accept-language
+it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7
+connection
+keep-alive
+cookie
+GUEST_LANGUAGE_ID=it_IT; COOKIE_SUPPORT=true; _pk_id.14.f933=af9394695636af62.1764344565.; _pk_ref.14.f933=%5B%22%22%2C%22%22%2C1772280159%2C%22https%3A%2F%2Fportale.agenziaentrate.gov.it%2F%22%5D; R_INF_0af5d59edb382cad43427350e5359677=y; qrcode=99IEB010863#96EBN012521#96MBD507172#96MBD504430#; _pk_id.4.b5b7=c591a610c366335e.1777027338.; SIAMPELB=03; SIAMPE=KhI9Us4WDNmvqUaFyFhI2cbipvg.*AAJTSQACMTEAAlNLABxJbWNUUnk5dyt0Vy9oNUNDcEhISDVRSGw2bTg9AAR0eXBlAANDVFMAAlMxAAIwNg..*; LtpaToken2=LJqvupi6xJD3rXTrkKS0FGVdgxoA1FB+UQ3r2iZjifVh/8A3IWytA782SjYOV/8xMZtAX696bYIJK7J8gFFdZiuDB2GG3jz0RlASl7lbZmBp8kMYlnnecrL0UsfXFWroELpUSbTi0JjuoErEtD6axMcb4mYxOb0ZdoHK9egPqqCpDcgW5pDDSscqlfG0wCf5kEKht6JLZTwM4R11+QZnDKu9zqhpNNhhXEo6/1mphkjkEzh0RbWbK0qBZ05dPD6K5rmhanyVZAolGbKG4gvHDODdjFLxVk1etfrDtIeaJ7tuP9+H09clI3g0FbqxlaqGjqRXgkd2ogGNXjNoTo7NZPdjducXoLeHLFsj19bDXc6y/XZjapa4cSFd1xsXikE7; AE=ALREADYSET; cookieutentee0194=0z77jZiLy4axUE4cqZb/9LzMVRWzm14RwfVVrcAoQ/cnKc1VXC+u80INpergi98VHx0CEQhseFtEzInr2j5PM9JHoDg7T4gudQxBtXTRTN6dCCmFXysjX9rI0ZV+GMOxt4ZHKl3MSezU4Buj1eXdYrdlsx3+rE0gzFW5J6L0SxFdnhVsYdPNdhQw9y9YncHHgdW7d9YhHZV+Uxf6ayYJQ38OmMtvoqYPMsSVNSTMruAmm0hrBf+Xj8cWuHufDMK9X9NTFnUw/mda2YcA60rMKA==; portaleCookie=0z77jZiLy4am4hW5DiUT1EXTNhq2L5VPik/1RZES0b39YLuEZOY31jzes0TwFPitDZKBv+m1KnPsNdWhPaw+Ida/RVvvRFfp4+VC5MSKtdjPajeahy5P0oFNbHAXCLors8RDCn0EmRp347lvQs3wd6Dd7OTDnx26iOf9cdrnsjDabWnGQ9Pi7j9AeBmEgwCg+7WAFbousW+EhXqc6yJsGV1MwfBdFODf0+9lf0Hj7iqLxEClXjP1KYaX2q4Z52/1+jOIFCZoDjalW42xvRKKjKzVspt4GXef4vLemCSc20fg7y5HtQ7UQA2Sc//5os8nDnSSY0TTuWI1BPA0LkC77svybwu4McJlNObzQoVf89PUNJh73m+IbBGgbfqoOpc2NNk0QaDh/n/Bxx8dzVDE+Eutz5zfRt1TqFmwO2FiNi9eZ3nSPtqqy7eG/wALhbZbKPZ5L9KvpUBztmQJBRpkT5YgM+gOFDMaN2jR229wSSkwRbCIeIZr6KiC0LojDqutMlg+o4ZRObXuqMvBOfn9D9alL53UlCa/xthtL6FJ7W0mlaS4i2JHadBUDytT3u9gIOnzdX8KdZMyBzz6rdId2PEpLDC/cxy/N74tdub1ic4lb9XR2xrdQ2ZwXA6znyuaEVV8+QBPFWIJhazyxOz9W/K9PrZbgb0R0Cyt7QBFY+zgCnM6DKO8lCPoXc+1LV2SMmNFaM2TfOqnX5cGyW9/+o7mRe3YuxSZrpS7+UJGzDj7YjorC7q4oFUWCYWz57a3scUdNofPlrLttyj6SStEKYaY8i87YEFS6eZ1NK52u3LLIZhHiRcaoW9ExWxKpINiHDT0ID3lLzCdd8DJm6GLTii37BO3ZYM35VE+G2U+F+rLUUzbKIv7f4dcoQ+R4M/z8aZWVlOluNKyDxky2CqvdS+G9WY5L8sNTb+rrflDAforXrparQMmJ9ieQ8akBpk8NQB8eqs1rkKvtbqFOkbHqf8panLcuIs07mht32xZrldr/mjolO4iny6y5Crp8ZkrYmPWWwSIJZPb7Jg3GJEvM48TK9jh2XlGI0L+/TO2KIY3R4uxpAujx/Y33zTD5UX3ULXLo2lbGpgg3uz9w927KK+699Jthzu6bgNITrSezQG9Nt/L13coDIYgnhqM2Q1Myv1Ntr2E1k9bxTyUc+hfJxEwxoooftdEEJ6F7aLefECYWS7ccK4Oz7FB4J8tGnC5jE6usWRLLBvbXcMUEjyoElyFt9tz6sPvW7oj/1JRv4OX1l6xoNOdA+8EbXpWT+nRR1GiVd1LLJMAp7TRUEXjJTIOmf/zBsR9tqPRA7f4Nbe9bx+ZsaTjuQ==; _pk_ref.4.b5b7=%5B%22%22%2C%22%22%2C1784817959%2C%22https%3A%2F%2Fportale.agenziaentrate.gov.it%2F%22%5D; _pk_ses.4.b5b7=1; FATSC=wI56+szQFI0s9QZdaIkQqf/8HVv4YD6wF2XBmhQ1gG2/K0qbR8eUmayiYVargJuwHdcBEJUbfdLQTCxMm0UG+3HxoDnbZKSwUtdZcGqhq3imnJ4s1tPra4RTWCxEAcPDTTejQQEI064q9B9PB4qNUPFNvWWDwrerb8qAVE04qeJn06nGnzql5TKl+MoY4Y2HK5Xkm5H6Q0ihU/rmtrydBdOzh5oc3skmk4eW4kZgTtrTMyrULYXU3CV+3ySeFevNbt2Nj2bZAHz2dN+FcH4T1rUguOwSl/SpPy+KAyM2nKUxQUqdzohWFNB4XnMgTN6IgpcREvQ5sC4DdQ80goKoftAN5xeFdB4Y2NWxfr3E2WCDVblqeA+w6uQ1bSpCzgek; B2BCookie=BXgrC9jVjF4uozTdffoCNj4D9qEPs6bYCjKsA/7/60VRJ4OaZova7m11mgTeDA5UFTnwRpUoQ83fRSi1VafNtZkJnQU0TXPSPqmr3XdbClxkwLS5Ei49C22ELK1cJfIOXe7sqSA88IINllcJHCVZh6J8ktPnXGQtSnTNX0bZxsQfR7P64WJj/MTJFCZ2+jW3inLY7+7bB62SDZUhWkoXbp2PnK+O4quOq1Hs3ykl+i5nyDr5AIVKyQ2dupXJOEfBXOfxHbdeGeqIIPgA/IdWmBajLY+ISl6gbFTcF+w4ExL8XDcM8RAJHLcva10Nd8EpHtbwYawKDc+HuRmIsIfYTe6k7hmwe2rV9USO8kotjC7uHqzm5oEMQq4tKGwiYcqZxpapkJzhXJea3XsmsWACEXgeJ75HpUPk3P4T081FF+vHHacHvtE3JMmyCG0jorXqZKIM2/jpQhcab+qxrxg0PeDsNkxiqU6M4EzMyqs2sN+G3s5eqQOFbMwdvjpJPoAOyoaq/3RfxVc6Y+aOds5k/WRj4S2VqazkgymasGWoo3EliBcu3061sUWtpvRWbd+F6pfPJlSJ7VM+FodgxMi8sH5jQ5lUPoqgyeQuUO1oHcU7J5OZFD9EWqTS3FE7uvyMKrTxQhdVTRp5FwxDdThDHVZzWvBjPN+PCIvHyIeaW5qpuFAna1eRDr8mKAO/tTkM6W9vQEGfww4bpruh5RnrlmHbSRU7/T+jy/FLyEF94WpmEIvNcAmzt6yzyQOwE4tu0syZPbdpdC+nlbsZSqFl28ggomyMBzte4RlbvehzX+ttab6C3zP5NmNCjiTP2z3Ekr/ux+UEZ8wVMh247vEZIVFtSMKBmnGbLIdApKAL4LEJ8EchAEyzFeN6S+JQ3us2H42Lq0hRarA+fT1GlB+nwuDG7rWwA1sIAecnGAOMcKO+Er20xidi3+5W8YdCAEZ082mX5Ct+3XQh4xvXw84B8ZgYPSMA442wprWZBkXd67ouF6y4docrzCZDkoCHyOjX5QtJXOADmk7KTJzL3nQElF8ta4ltg7eRBmPkYFAtwVE5Qz/Siq6wuQu8V36xJoG6vaQTPlp3HWue8A4XU0wba6+BQs9Pr8yU7RE1w53hWYs=.B/bAyzdEwaBxu3+pHTjj6g==; JSESSIONID=0000AjC1PosFipJCE9WEB_gKHTQ:1f0ea44a7
+host
+ivaservizi.agenziaentrate.gov.it
+referer
+https://ivaservizi.agenziaentrate.gov.it/ser/documenticommercialionline/?v=1729523483132
+sec-ch-ua
+"Not;A=Brand";v="8", "Chromium";v="150", "Google Chrome";v="150"
+sec-ch-ua-mobile
+?0
+sec-ch-ua-platform
+"Windows"
+sec-fetch-dest
+empty
+sec-fetch-mode
+cors
+sec-fetch-site
+same-origin
+strict-transport-security
+max-age=16070400; includeSubDomains
+user-agent
+Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36
+x-content-type-options
+nosniff
+x-frame-options
+deny
+x-xss-protection
+1; mode=block

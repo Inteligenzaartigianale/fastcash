@@ -406,132 +406,137 @@ export async function loginWithSiampe(
       }
     });
 
-    // ── Strategy 1: click "Servizi" menu then find DCO link ─────────────────
-    // The portale home has a "Servizi" section with a search box.
-    // We look for a link whose text contains "Fattura", "corrispettivi",
-    // "Documenti Commerciali", or an href pointing to ivaservizi.
-    logger.info("Scanning portale home for DCO/Fattura service link");
+    // ── Navigate to /PortaleWeb/servizi and use the search + Cerca button ──────
+    // Screenshots confirmed: the Servizi page renders with 61 results, a search
+    // box "Cerca nei servizi" + "Cerca" button, and category filters including
+    // "Trasmissioni telematiche". DCO may need the IVA-holder toggle enabled.
+    logger.info("Navigating to /PortaleWeb/servizi");
+    await page.goto("https://portale.agenziaentrate.gov.it/PortaleWeb/servizi", {
+      waitUntil: "networkidle0", timeout: 30000,
+    }).catch(() => {});
+    await new Promise((r) => setTimeout(r, 5000)); // wait for 61-result list to render
+    await page.screenshot({ path: "/tmp/portale-servizi.png", fullPage: false }).catch(() => {});
 
-    const dcoInfo = await page.evaluate(`(function() {
-      var keywords = ['fattura e corrispettivi', 'documenti commerciali', 'corrispettivi', 'fattura'];
+    // Log ALL links on the servizi page so we can find DCO even if href differs
+    const serviziLinks = await page.evaluate(`(function() {
       var links = Array.from(document.querySelectorAll('a'));
-      for (var i = 0; i < links.length; i++) {
-        var txt = (links[i].textContent || '').toLowerCase().trim();
-        var href = links[i].href || '';
-        if (href.includes('ivaservizi') || keywords.some(function(k){ return txt.includes(k); })) {
-          var r = links[i].getBoundingClientRect();
-          return { href: href, text: txt.substring(0, 80), x: Math.round(r.left + r.width/2), y: Math.round(r.top + r.height/2) };
-        }
-      }
-      // Also check buttons and clickable elements
-      var clickables = Array.from(document.querySelectorAll('button, [role="button"], [onclick]'));
-      for (var j = 0; j < clickables.length; j++) {
-        var ctxt = (clickables[j].textContent || '').toLowerCase().trim();
-        if (keywords.some(function(k){ return ctxt.includes(k); })) {
-          var cr = clickables[j].getBoundingClientRect();
-          return { href: null, text: ctxt.substring(0, 80), x: Math.round(cr.left + cr.width/2), y: Math.round(cr.top + cr.height/2) };
-        }
-      }
-      return null;
-    })()`) as { href: string | null; text: string; x: number; y: number } | null;
+      return links.map(function(a) {
+        return { text: (a.textContent||'').trim().substring(0,60), href: a.href };
+      }).filter(function(l){ return l.text.length > 2; });
+    })()`) as Array<{ text: string; href: string }>;
+    logger.info({ count: serviziLinks.length, sample: serviziLinks.slice(0, 30) }, "All links on servizi page");
 
-    logger.info({ dcoInfo }, "DCO service link scan result");
+    // Try to find DCO link directly in the rendered list
+    const dcoDirect = serviziLinks.find((l) => {
+      const t = l.text.toLowerCase();
+      return t.includes("fattura") || t.includes("corrispettivi") || t.includes("documenti commerciali") ||
+             l.href.includes("ivaservizi") || l.href.includes("corrispettivi");
+    });
 
-    if (dcoInfo) {
-      if (dcoInfo.href && dcoInfo.href.includes("http")) {
-        logger.info({ href: dcoInfo.href }, "Navigating to DCO link via href");
-        await page.goto(dcoInfo.href, { waitUntil: "networkidle0", timeout: 30000 }).catch(() => {});
-      } else {
-        logger.info({ coords: { x: dcoInfo.x, y: dcoInfo.y } }, "Clicking DCO element via mouse");
-        await page.mouse.click(dcoInfo.x, dcoInfo.y);
-        await page.waitForNavigation({ waitUntil: "networkidle0", timeout: 15000 }).catch(() => {});
-      }
+    if (dcoDirect) {
+      logger.info({ dcoDirect }, "Found DCO link directly on servizi page");
+      await page.goto(dcoDirect.href, { waitUntil: "networkidle0", timeout: 30000 }).catch(() => {});
       await new Promise((r) => setTimeout(r, 3000));
-      logger.info({ url: page.url() }, "After DCO link click");
-      await page.screenshot({ path: "/tmp/after-dco-click.png", fullPage: false }).catch(() => {});
     }
 
-    // ── Strategy 2: use the "Cerca il servizio" search box ───────────────────
+    // ── Strategy: use the Servizi page search box + Cerca button ─────────────
     if (!page.url().includes("ivaservizi") || page.url().includes("nonauth")) {
-      logger.info("Trying 'Cerca il servizio' search box for DCO");
-      const searchInput = await page.$('input[placeholder*="cerca" i], input[placeholder*="servizio" i], input[type="search"]');
-      if (searchInput) {
-        await searchInput.click();
-        await page.keyboard.type("Fattura");
-        await new Promise((r) => setTimeout(r, 2000));
-        await page.screenshot({ path: "/tmp/portale-search.png", fullPage: false }).catch(() => {});
+      logger.info("Using search box on /PortaleWeb/servizi");
 
-        // Click first result
-        const firstResult = await page.evaluate(`(function() {
-          var links = Array.from(document.querySelectorAll('a, [role="option"], li'));
-          for (var i = 0; i < links.length; i++) {
-            var txt = (links[i].textContent || '').toLowerCase();
-            var href = links[i].href || '';
-            if (txt.includes('fattura') || txt.includes('corrispettivi') || href.includes('ivaservizi')) {
-              var r = links[i].getBoundingClientRect();
-              if (r.width > 0) return { href: href, x: Math.round(r.left + r.width/2), y: Math.round(r.top + r.height/2), text: txt.substring(0, 60) };
-            }
+      // Enable IVA-holder toggle (shows VAT business services including DCO)
+      const ivaToggle = await page.evaluate(`(function() {
+        var els = Array.from(document.querySelectorAll('button, input[type="checkbox"], [role="switch"]'));
+        for (var i = 0; i < els.length; i++) {
+          var txt = (els[i].textContent || els[i].getAttribute('aria-label') || '').toLowerCase();
+          if (txt.includes('partita iva') || txt.includes('titolari')) {
+            var r = els[i].getBoundingClientRect();
+            return { x: Math.round(r.left + r.width/2), y: Math.round(r.top + r.height/2), tag: els[i].tagName };
           }
-          return null;
-        })()`).catch(() => null) as { href: string; x: number; y: number; text: string } | null;
-
-        logger.info({ firstResult }, "Search result found");
-
-        if (firstResult) {
-          if (firstResult.href && firstResult.href.startsWith("http")) {
-            await page.goto(firstResult.href, { waitUntil: "networkidle0", timeout: 30000 }).catch(() => {});
-          } else {
-            await page.mouse.click(firstResult.x, firstResult.y);
-            await page.waitForNavigation({ waitUntil: "networkidle0", timeout: 15000 }).catch(() => {});
-          }
-          await new Promise((r) => setTimeout(r, 3000));
-          logger.info({ url: page.url() }, "After search result click");
-          await page.screenshot({ path: "/tmp/after-search-click.png", fullPage: false }).catch(() => {});
         }
-      } else {
-        logger.warn("Search input not found on portale home");
+        return null;
+      })()`).catch(() => null) as { x: number; y: number; tag: string } | null;
+
+      if (ivaToggle) {
+        logger.info({ ivaToggle }, "Clicking 'titolari di Partita IVA' toggle");
+        await page.mouse.click(ivaToggle.x, ivaToggle.y);
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+
+      // Type "Fattura" in search and press Cerca
+      const searchInput = await page.$('input[placeholder*="cerca" i], input[placeholder*="servizi" i], input[type="search"], input[type="text"]');
+      if (searchInput) {
+        await searchInput.click({ clickCount: 3 }); // select all
+        await page.keyboard.type("Fattura");
+        await new Promise((r) => setTimeout(r, 500));
+
+        // Click the "Cerca" button
+        const cercaClicked = await page.evaluate(`(function() {
+          var btns = Array.from(document.querySelectorAll('button'));
+          var btn = btns.find(function(b){ return (b.textContent||'').trim() === 'Cerca'; });
+          if (btn) { btn.click(); return true; }
+          return false;
+        })()`).catch(() => false);
+        logger.info({ cercaClicked }, "Cerca button clicked");
+
+        await new Promise((r) => setTimeout(r, 4000));
+        await page.screenshot({ path: "/tmp/portale-search-results.png", fullPage: false }).catch(() => {});
+
+        // Scan links after search
+        const searchLinks = await page.evaluate(`(function() {
+          var links = Array.from(document.querySelectorAll('a'));
+          return links.map(function(a) {
+            return { text: (a.textContent||'').trim().substring(0,60), href: a.href };
+          }).filter(function(l){
+            var t = l.text.toLowerCase();
+            return t.includes('fattura') || t.includes('corrispettivi') || t.includes('documenti commerciali') || l.href.includes('ivaservizi');
+          });
+        })()`) as Array<{ text: string; href: string }>;
+        logger.info({ searchLinks }, "DCO links found after search");
+
+        if (searchLinks.length > 0 && searchLinks[0]!.href) {
+          await page.goto(searchLinks[0]!.href, { waitUntil: "networkidle0", timeout: 30000 }).catch(() => {});
+          await new Promise((r) => setTimeout(r, 3000));
+          logger.info({ url: page.url() }, "After DCO search result navigation");
+        }
       }
     }
 
-    // ── Strategy 3: click "Servizi" menu item and look for DCO there ─────────
+    // ── Strategy: click "Trasmissioni telematiche" category filter ────────────
     if (!page.url().includes("ivaservizi") || page.url().includes("nonauth")) {
-      logger.info("Trying 'Servizi' menu click");
-      const serviziLink = await page.evaluate(`(function() {
-        var links = Array.from(document.querySelectorAll('a, button, nav a'));
+      logger.info("Trying 'Trasmissioni telematiche' category filter");
+      const trasmClick = await page.evaluate(`(function() {
+        var links = Array.from(document.querySelectorAll('a, button, span'));
         for (var i = 0; i < links.length; i++) {
-          var txt = (links[i].textContent || '').trim();
-          if (txt === 'Servizi' || txt === 'I Servizi') {
+          var txt = (links[i].textContent||'').trim().toLowerCase();
+          if (txt.includes('trasmissioni') || txt.includes('telematiche')) {
             var r = links[i].getBoundingClientRect();
-            return { x: Math.round(r.left + r.width/2), y: Math.round(r.top + r.height/2), text: txt };
+            if (r.width > 0) return { x: Math.round(r.left + r.width/2), y: Math.round(r.top + r.height/2), text: (links[i].textContent||'').trim() };
           }
         }
         return null;
       })()`).catch(() => null) as { x: number; y: number; text: string } | null;
 
-      if (serviziLink) {
-        logger.info({ serviziLink }, "Clicking Servizi menu");
-        await page.mouse.click(serviziLink.x, serviziLink.y);
-        await new Promise((r) => setTimeout(r, 3000));
-        await page.screenshot({ path: "/tmp/portale-servizi-menu.png", fullPage: false }).catch(() => {});
+      if (trasmClick) {
+        logger.info({ trasmClick }, "Clicking Trasmissioni telematiche category");
+        await page.mouse.click(trasmClick.x, trasmClick.y);
+        await new Promise((r) => setTimeout(r, 4000));
+        await page.screenshot({ path: "/tmp/portale-trasmissioni.png", fullPage: false }).catch(() => {});
 
-        // Now look for DCO in the expanded menu/page
-        const dcoAfterMenu = await page.evaluate(`(function() {
+        // Look for DCO in filtered results
+        const filteredLinks = await page.evaluate(`(function() {
           var links = Array.from(document.querySelectorAll('a'));
-          for (var i = 0; i < links.length; i++) {
-            var txt = (links[i].textContent || '').toLowerCase();
-            var href = links[i].href || '';
-            if (txt.includes('fattura') || txt.includes('corrispettivi') || href.includes('ivaservizi')) {
-              return { href: href, text: txt.trim().substring(0, 80) };
-            }
-          }
-          return null;
-        })()`).catch(() => null) as { href: string; text: string } | null;
+          return links.map(function(a) {
+            return { text: (a.textContent||'').trim().substring(0,80), href: a.href };
+          }).filter(function(l){
+            var t = l.text.toLowerCase();
+            return t.includes('fattura') || t.includes('corrispettivi') || t.includes('documenti commerciali') || l.href.includes('ivaservizi');
+          });
+        })()`) as Array<{ text: string; href: string }>;
+        logger.info({ filteredLinks }, "DCO links after Trasmissioni filter");
 
-        logger.info({ dcoAfterMenu }, "DCO link after Servizi menu click");
-        if (dcoAfterMenu?.href?.startsWith("http")) {
-          await page.goto(dcoAfterMenu.href, { waitUntil: "networkidle0", timeout: 30000 }).catch(() => {});
+        if (filteredLinks.length > 0 && filteredLinks[0]!.href) {
+          await page.goto(filteredLinks[0]!.href, { waitUntil: "networkidle0", timeout: 30000 }).catch(() => {});
           await new Promise((r) => setTimeout(r, 3000));
-          logger.info({ url: page.url() }, "After Servizi menu DCO navigation");
         }
       }
     }

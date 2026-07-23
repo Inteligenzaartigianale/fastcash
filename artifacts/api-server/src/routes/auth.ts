@@ -29,6 +29,12 @@ router.post("/auth/login", async (req, res): Promise<void> => {
       ragioneSociale: loginResult.ragioneSociale,
       partitaIva: loginResult.partitaIva,
       codiceFiscale: loginResult.codiceFiscale,
+      indirizzo: "",
+      numeroCivico: "",
+      cap: "",
+      comune: "",
+      provincia: "",
+      defAliquotaIVA: "22",
       credentials: { codiceFiscale, password, pin },
       createdAt: new Date(),
     });

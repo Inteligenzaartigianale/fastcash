@@ -8,6 +8,13 @@ export interface AeSession {
   ragioneSociale: string;
   partitaIva: string;
   codiceFiscale: string;
+  // Business address — populated from /me after first successful call
+  indirizzo: string;
+  numeroCivico: string;
+  cap: string;
+  comune: string;
+  provincia: string;
+  defAliquotaIVA: string; // default IVA rate, e.g. "22"
   credentials: { codiceFiscale: string; password: string; pin: string };
   createdAt: Date;
 }

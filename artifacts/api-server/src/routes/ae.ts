@@ -39,8 +39,11 @@ async function requireSession(): Promise<string> {
       logger.info("Session expired, auto-refreshing via Puppeteer");
       const result = await loginWithSiampe(session.credentials);
       setSession({
-        ...session,
+        ...session,           // preserve address/business data from previous /me call
         cookies: result.cookieHeader,
+        ragioneSociale: result.ragioneSociale || session.ragioneSociale,
+        partitaIva: result.partitaIva || session.partitaIva,
+        codiceFiscale: result.codiceFiscale || session.codiceFiscale,
         createdAt: new Date(),
       });
       return result.cookieHeader;
@@ -106,16 +109,31 @@ router.get("/ae/me", async (req, res): Promise<void> => {
   const aeData = result.data as Record<string, unknown>;
   const session = getSession();
 
+  // Persist address data to session so buildDcw10Payload can use it
+  if (session && aeData) {
+    const updated = {
+      ...session,
+      ragioneSociale: (aeData.ragioneSociale as string) || session.ragioneSociale,
+      partitaIva: (aeData.partitaIva as string) || session.partitaIva,
+      codiceFiscale: (aeData.codiceFiscale as string) || session.codiceFiscale,
+      indirizzo: (aeData.indirizzo as string) || session.indirizzo,
+      numeroCivico: (aeData.numeroCivico as string) || session.numeroCivico,
+      cap: (aeData.cap as string) || session.cap,
+      comune: (aeData.comune as string) || session.comune,
+      provincia: (aeData.provincia as string) || session.provincia,
+      defAliquotaIVA: (aeData.defAliquotaIVA as string) || session.defAliquotaIVA,
+    };
+    setSession(updated);
+  }
+
   const meResult = GetMeResponse.parse({
-    ragioneSociale:
-      (aeData?.ragioneSociale as string) ?? session?.ragioneSociale ?? "",
+    ragioneSociale: (aeData?.ragioneSociale as string) ?? session?.ragioneSociale ?? "",
     partitaIva: (aeData?.partitaIva as string) ?? session?.partitaIva ?? "",
-    codiceFiscale:
-      (aeData?.codiceFiscale as string) ?? session?.codiceFiscale ?? "",
-    indirizzo: (aeData?.indirizzo as string) ?? "",
-    comune: (aeData?.comune as string) ?? "",
-    cap: (aeData?.cap as string) ?? "",
-    provincia: (aeData?.provincia as string) ?? "",
+    codiceFiscale: (aeData?.codiceFiscale as string) ?? session?.codiceFiscale ?? "",
+    indirizzo: (aeData?.indirizzo as string) ?? session?.indirizzo ?? "",
+    comune: (aeData?.comune as string) ?? session?.comune ?? "",
+    cap: (aeData?.cap as string) ?? session?.cap ?? "",
+    provincia: (aeData?.provincia as string) ?? session?.provincia ?? "",
   });
 
   res.json(meResult);
@@ -163,17 +181,21 @@ router.post("/ae/documenti", async (req, res): Promise<void> => {
 
   const aeResp = result.data as Record<string, unknown>;
 
-  // Extract document number from AE response
-  const progressivo = extractProgressivo(aeResp);
+  // Real AE response: {"esito": true, "idtrx": "213251520", "progressivo": "DCW2026/1327-9909", "errori": []}
+  if (aeResp.esito === false || (Array.isArray(aeResp.errori) && aeResp.errori.length > 0)) {
+    req.log.warn({ aeResp }, "AE returned esito=false or errori");
+    res.status(422).json({ error: "AE ha rifiutato il documento", details: JSON.stringify(aeResp.errori) });
+    return;
+  }
+
+  const progressivo = aeResp.progressivo as string | undefined;
 
   const docResult = InviaDocumentoResponse.parse({
     success: true,
-    numeroDocumento: progressivo
-      ? `DCW${new Date().getFullYear()}/${progressivo}`
-      : "DCW/" + new Date().getFullYear(),
+    numeroDocumento: progressivo ?? `DCW${new Date().getFullYear()}`,
     numeroProgressivo: progressivo ?? "",
     dataEmissione: new Date().toISOString().split("T")[0]!,
-    pdfUrl: progressivo ? `/api/ae/stampa/${progressivo}` : null,
+    pdfUrl: progressivo ? `/api/ae/stampa/${encodeURIComponent(progressivo)}` : null,
   });
 
   res.json(docResult);
@@ -225,19 +247,22 @@ router.get("/ae/stampa/:numeroProgressivo", async (req, res): Promise<void> => {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function extractProgressivo(aeResp: Record<string, unknown>): string | null {
-  // Try various fields AE might return
-  const candidates = [
-    aeResp?.progressivo,
-    aeResp?.numeroProgressivo,
-    aeResp?.id,
-    aeResp?.documentoId,
-    (aeResp?.documento as Record<string, unknown>)?.progressivo,
-  ];
-  for (const c of candidates) {
-    if (c != null) return String(c);
-  }
-  return null;
+/** Format a number as an 8-decimal-place string (e.g. "0.08196721") */
+function fmt8(n: number): string {
+  return n.toFixed(8);
+}
+
+/** Format a number as a 2-decimal-place string (e.g. "0.10") */
+function fmt2(n: number): string {
+  return n.toFixed(2);
+}
+
+/** Format today's date as "DD/MM/YYYY" */
+function todayDDMMYYYY(): string {
+  const d = new Date();
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  return `${dd}/${mm}/${d.getFullYear()}`;
 }
 
 function buildDcw10Payload(
@@ -247,9 +272,9 @@ function buildDcw10Payload(
     righe: Array<{
       quantita: number;
       descrizione: string;
-      prezzoUnitario: number;
-      aliquotaIva: string;
-      sconto?: number;
+      prezzoUnitario: number; // GROSS unit price (IVA inclusa)
+      aliquotaIva: string;    // e.g. "22", "10", "4", "Esente", "Non soggette"
+      sconto?: number;        // line discount amount (on total line)
       omaggio?: boolean;
     }>;
     pagamento: {
@@ -267,31 +292,85 @@ function buildDcw10Payload(
       creditoCessioneBene?: number;
     };
   },
-  session: { partitaIva: string; codiceFiscale: string; ragioneSociale: string },
+  session: {
+    partitaIva: string;
+    codiceFiscale: string;
+    ragioneSociale: string;
+    indirizzo: string;
+    numeroCivico: string;
+    cap: string;
+    comune: string;
+    provincia: string;
+    defAliquotaIVA: string;
+  },
 ) {
-  const righe = input.righe.map((r, i) => {
-    const aliqNum = parseFloat(r.aliquotaIva);
-    const isPercent = !isNaN(aliqNum);
-    const prezzoComplessivo = r.quantita * r.prezzoUnitario;
-    const importoIva = isPercent
-      ? prezzoComplessivo * (aliqNum / 100) / (1 + aliqNum / 100)
-      : 0;
-    const sconto = r.sconto ?? 0;
+  // ── Per-line calculations ──────────────────────────────────────────────────
+  const elementiContabili = input.righe.map((r) => {
+    const aliqNum = parseFloat(r.aliquotaIva); // NaN for Esente/Non soggette
+    const hasIva = !isNaN(aliqNum) && aliqNum > 0;
+    const divisor = hasIva ? 1 + aliqNum / 100 : 1;
+
+    const prezzoLordo = r.quantita * r.prezzoUnitario; // total gross (IVA included)
+    const scontoLordo = r.sconto ?? 0;                 // discount on total gross
+    const prezzoLordoNetto = prezzoLordo - scontoLordo; // after discount
+
+    const imponibile = prezzoLordoNetto / divisor;     // taxable base
+    const importoIVA = prezzoLordoNetto - imponibile;  // IVA amount
+
+    // Per-unit net price (imponibile / quantita)
+    const prezzoUnitarioNetto = imponibile / r.quantita;
+    const scontoUnitario = r.quantita > 0 ? scontoLordo / r.quantita / divisor : 0;
 
     return {
-      numero: i + 1,
-      quantita: r.quantita,
-      descrizione: r.descrizione,
-      prezzoUnitario: r.prezzoUnitario,
-      aliquotaIva: r.aliquotaIva,
-      prezzoComplessivo: prezzoComplessivo,
-      importoIva: Math.round(importoIva * 100) / 100,
-      sconto,
-      prezzoNetto: Math.round((prezzoComplessivo - sconto) * 100) / 100,
-      omaggio: r.omaggio ?? false,
+      idElementoContabile: "",
+      resiPregressi: fmt2(0),
+      reso: fmt2(0),
+      quantita: fmt2(r.quantita),
+      descrizioneProdotto: r.descrizione,
+      prezzoLordo: fmt8(prezzoLordo),
+      prezzoUnitario: fmt8(prezzoUnitarioNetto),
+      scontoUnitario: fmt8(scontoUnitario),
+      scontoLordo: fmt8(scontoLordo),
+      aliquotaIVA: hasIva ? String(Math.round(aliqNum)) : r.aliquotaIva,
+      importoIVA: fmt8(importoIVA),
+      imponibile: fmt8(imponibile),
+      imponibileNetto: fmt8(imponibile), // same as imponibile when no additional line discounts
+      totale: fmt8(prezzoLordoNetto),
+      omaggio: r.omaggio ? "S" : "N",
     };
   });
 
+  // ── Document totals ────────────────────────────────────────────────────────
+  const ammontareComplessivo = elementiContabili.reduce(
+    (s, e) => s + parseFloat(e.prezzoLordo), 0,
+  );
+  const totaleImponibile = elementiContabili.reduce(
+    (s, e) => s + parseFloat(e.imponibile), 0,
+  );
+  const importoTotaleIva = elementiContabili.reduce(
+    (s, e) => s + parseFloat(e.importoIVA), 0,
+  );
+  const scontoTotale = elementiContabili.reduce(
+    (s, e) => s + parseFloat(e.scontoLordo), 0,
+  );
+
+  // ── Pagamento → vendita ────────────────────────────────────────────────────
+  const pag = input.pagamento;
+  const nrEf = input.corrispettivoNonRiscosso?.emissioneFattura ? (ammontareComplessivo) : 0;
+  const nrPs = input.corrispettivoNonRiscosso?.prestazioniServizi ?? 0;
+  const nrCs = input.corrispettivoNonRiscosso?.creditoCessioneBene ?? 0;
+  const totaleNonRiscosso = nrEf + nrPs + nrCs;
+
+  const vendita = [
+    { tipo: "PC", importo: fmt2(pag.contanti ?? 0) },
+    { tipo: "PE", importo: fmt2(pag.elettronico ?? 0) },
+    { tipo: "TR", importo: fmt2(pag.ticketRestaurant ?? 0), numero: String(Math.round(parseFloat(pag.numeroTicket ?? "0"))) },
+    { tipo: "NR_EF", importo: fmt2(nrEf) },
+    { tipo: "NR_PS", importo: fmt2(nrPs) },
+    { tipo: "NR_CS", importo: fmt2(nrCs) },
+  ];
+
+  // ── Final payload — field names/structure exactly as in real HAR capture ───
   return {
     datiTrasmissione: { formato: "DCW10" },
     cedentePrestatore: {
@@ -300,29 +379,37 @@ function buildDcw10Payload(
         partitaIva: session.partitaIva,
         codiceFiscale: session.codiceFiscale,
       },
+      altriDatiIdentificativi: {
+        denominazione: session.ragioneSociale,
+        indirizzo: session.indirizzo,
+        numeroCivico: session.numeroCivico,
+        cap: session.cap,
+        comune: session.comune,
+        provincia: session.provincia,
+        nazione: "IT",
+        modificati: false,   // false = use server-stored data; prevents validation errors
+        defAliquotaIVA: session.defAliquotaIVA || "22",
+        nuovoUtente: false,
+      },
+      multiAttivita: [],
+      multiSede: [],
     },
     documentoCommerciale: {
       cfCessionarioCommittente: input.codiceLotteria ?? "",
       flagDocCommPerRegalo: input.flagDocCommPerRegalo ?? false,
-      progressivoCollegato: input.pagamento.documentoCollegato ?? "",
-      tipoOperazione: input.tipoOperazione,
-      dataEmissione: new Date().toISOString().split("T")[0]!,
-      righe,
-      pagamento: {
-        contanti: input.pagamento.contanti ?? 0,
-        elettronico: input.pagamento.elettronico ?? 0,
-        ticketRestaurant: input.pagamento.ticketRestaurant ?? 0,
-        numeroTicket: input.pagamento.numeroTicket ?? "",
-        scontoAPagare: input.pagamento.scontoAPagare ?? 0,
-      },
-      corrispettivoNonRiscosso: {
-        emissioneFattura:
-          input.corrispettivoNonRiscosso?.emissioneFattura ?? false,
-        prestazioniServizi:
-          input.corrispettivoNonRiscosso?.prestazioniServizi ?? 0,
-        creditoCessioneBene:
-          input.corrispettivoNonRiscosso?.creditoCessioneBene ?? 0,
-      },
+      progressivoCollegato: pag.documentoCollegato ?? "",
+      dataOra: todayDDMMYYYY(),              // "DD/MM/YYYY" not ISO
+      multiAttivita: { codiceAttivita: "", descAttivita: "" }, // object not array
+      importoTotaleIva: fmt8(importoTotaleIva),
+      scontoTotale: fmt8(scontoTotale),
+      scontoTotaleLordo: fmt8(scontoTotale),
+      totaleImponibile: fmt8(totaleImponibile),
+      ammontareComplessivo: fmt8(ammontareComplessivo),
+      totaleNonRiscosso: fmt8(totaleNonRiscosso),
+      elementiContabili,
+      vendita,
+      scontoAbbuono: fmt2(pag.scontoAPagare ?? 0),
+      importoDetraibileDeducibile: fmt8(0),
     },
     flagIdentificativiModificati: false,
   };

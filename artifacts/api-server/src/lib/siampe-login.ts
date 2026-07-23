@@ -464,26 +464,12 @@ export async function loginWithSiampe(
       logger.info("Clicked IVA toggle");
     }
 
-    // Step 2: click category filter "Trasmissioni telematiche" to narrow results
-    const categoryClicked = await page.evaluate(`(function() {
-      var btns = Array.from(document.querySelectorAll('button, a, span, div'));
-      var btn = btns.find(function(b) {
-        return (b.textContent||'').trim() === 'Trasmissioni telematiche';
-      });
-      if (btn) {
-        btn.click();
-        return (btn.textContent||'').trim();
-      }
-      return null;
-    })()`).catch(() => null);
-    logger.info({ categoryClicked }, "Category filter click");
-    if (categoryClicked) await new Promise((r) => setTimeout(r, 3000));
-
-    // Step 3: find DCO card by heading. Keywords for DCO:
-    // "documento commerciale", "corrispettivi", "scontrino"
-    // NOT "fattura" (that is e-invoicing, a different service)
+    // Step 2: find DCO card by heading — NO category filter (it excludes DCO).
+    // DCO card title is "Documento commerciale on line".
+    // Keywords: "documento commerciale", "commerciale on line", "scontrino".
+    // NOT "fattura" (fatturazione elettronica B2B) and NOT "corrispettivi" (not in card name).
     const findDCOCard = async () => page.evaluate(`(function() {
-      var keywords = ['documento commerciale', 'corrispettivi', 'scontrino telematico', 'dco'];
+      var keywords = ['documento commerciale', 'commerciale on line', 'scontrino'];
       var allEls = Array.from(document.querySelectorAll('h1,h2,h3,h4,h5,h6,p,span,div,a'));
       for (var i = 0; i < allEls.length; i++) {
         var el = allEls[i];
@@ -506,20 +492,30 @@ export async function loginWithSiampe(
       return null;
     })()`).catch(() => null) as { href: string; x: number; y: number; heading: string } | null;
 
+    // Wait 5s for IVA toggle to fully reload the service list
+    await new Promise((r) => setTimeout(r, 5000));
     let dcoCard = await findDCOCard();
+    logger.info({ dcoCard }, "DCO card after IVA toggle (no category filter)");
 
-    // Step 4: if not found after category filter, try searching "corrispettivi"
+    // Step 3: if not found, use search box with "documento"
     if (!dcoCard) {
-      logger.info("DCO card not found after category filter — searching 'corrispettivi'");
+      logger.info("DCO card not found — searching 'documento' in search box");
+      // Clear any active category filter first (click the active one to deselect)
+      await page.evaluate(`(function(){
+        var active = Array.from(document.querySelectorAll('button.active, button[aria-pressed="true"], a.active'));
+        active.forEach(function(b){ b.click(); });
+      })()`).catch(() => {});
+      await new Promise((r) => setTimeout(r, 1000));
+
       const searchInput = await page.$('input[placeholder*="cerca" i], input[placeholder*="serviz" i], input[type="search"]');
       if (searchInput) {
         await searchInput.click({ clickCount: 3 });
-        await page.keyboard.type("corrispettivi");
-        // Press Enter or click Cerca
+        await page.keyboard.type("documento");
         await page.keyboard.press("Enter");
         await new Promise((r) => setTimeout(r, 3000));
         await page.screenshot({ path: "/tmp/portale-search-results.png", fullPage: false }).catch(() => {});
         dcoCard = await findDCOCard();
+        logger.info({ dcoCard }, "DCO card after 'documento' search");
       }
     }
 
@@ -530,7 +526,7 @@ export async function loginWithSiampe(
           return { tag: h.tagName, text: (h.textContent||'').trim().substring(0,60) };
         }).filter(function(h){ return h.text.length > 3; });
       })()`).catch(() => []);
-      logger.info({ visibleHeadings }, "Visible headings on page (DCO not found)");
+      logger.info({ visibleHeadings }, "Visible headings (DCO still not found)");
     }
 
     logger.info({ dcoCard }, "DCO card result");

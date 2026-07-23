@@ -402,55 +402,56 @@ export async function loginWithSiampe(
     await new Promise((r) => setTimeout(r, 5000));
     await page.screenshot({ path: "/tmp/portale-home.png", fullPage: false }).catch(() => {});
 
-    // ── Intercept Set-Cookie headers from ivaservizi ──────────────────────────
+    // ── Intercept Set-Cookie headers from both portale and ivaservizi ────────
     page.on("response", (res) => {
       const url = res.url();
-      if (url.includes("ivaservizi.agenziaentrate.gov.it")) {
+      if (url.includes("ivaservizi.agenziaentrate.gov.it") || url.includes("accessoFatturazione")) {
         const sc = res.headers()["set-cookie"];
-        if (sc) logger.info({ url: url.substring(0, 80), setCookie: sc.substring(0, 300) }, "ivaservizi Set-Cookie received");
-        else logger.info({ url: url.substring(0, 80), status: res.status() }, "ivaservizi response (no Set-Cookie)");
+        const loc = res.headers()["location"] ?? "";
+        if (sc) logger.info({ url: url.substring(0, 100), setCookie: sc.substring(0, 400) }, "Set-Cookie received");
+        else logger.info({ url: url.substring(0, 100), status: res.status(), location: loc.substring(0, 100) }, "Response (no Set-Cookie)");
       }
     });
 
-    // ── Strategy 1 (primary): navigate directly to ivaservizi DCO URL ─────────
-    // The real browser navigates directly here with LtpaToken2 + COOKIE_SUPPORT
-    // + GUEST_LANGUAGE_ID. Those cookies are now pre-set above, so this should
-    // trigger the WAS SSO handshake and emit FATSC + B2BCookie + JSESSIONID.
-    logger.info("Strategy 1: direct navigation to ivaservizi DCO URL");
-    await page.goto("https://ivaservizi.agenziaentrate.gov.it/ser/documenticommercialionline/", {
-      waitUntil: "networkidle0", timeout: 30000,
-    }).catch(() => {});
-    await new Promise((r) => setTimeout(r, 4000));
+    // ── Strategy 1 (primary): portale accessoFatturazione → SSO → ivaservizi ──
+    // This is the REAL entry point the user's browser uses. It goes through the
+    // portale's SSO gatekeeper which sets FATSC + B2BCookie + JSESSIONID before
+    // redirecting to ivaservizi.
+    logger.info("Strategy 1: navigate to portale accessoFatturazione (SSO entry for Fatture/Corrispettivi)");
+    await page.goto("https://portale.agenziaentrate.gov.it/PortaleWeb/servizi/accessoFatturazione", {
+      waitUntil: "networkidle0", timeout: 45000,
+    }).catch((e) => { logger.warn({ err: String(e) }, "accessoFatturazione nav error (continuing)"); });
+    await new Promise((r) => setTimeout(r, 5000));
 
-    const afterDirectUrl = page.url();
-    const directCookies = await page.cookies();
-    const hasIvaserviziSession = directCookies.some((c) => c.name === "FATSC" || c.name === "JSESSIONID" || c.name === "B2BCookie");
-    logger.info(
-      { url: afterDirectUrl, hasIvaserviziSession, cookies: directCookies.map((c) => c.name) },
-      "After direct ivaservizi navigation",
-    );
+    const afterAccUrl = page.url();
     await page.screenshot({ path: "/tmp/ivaservizi-direct.png", fullPage: false }).catch(() => {});
 
-    // ── Strategy 2: portale /PortaleWeb/servizi → search + click DCO card ─────
-    // The Servizi page renders 61 cards. DCO is under "Trasmissioni telematiche"
-    // and requires the "titolari di Partita IVA" toggle to be enabled.
-    if (!hasIvaserviziSession) {
-      logger.info("Strategy 2: portale servizi page → find and click DCO card");
+    // Collect cookies from ALL relevant domains — page.cookies() alone only returns
+    // the current page's domain cookies; we must explicitly request each domain.
+    const cookiesPortale = await page.cookies("https://portale.agenziaentrate.gov.it").catch(() => []);
+    const cookiesIva = await page.cookies("https://ivaservizi.agenziaentrate.gov.it").catch(() => []);
+    const cookiesAe = await page.cookies("https://www.agenziaentrate.gov.it").catch(() => []);
+    const allAfterAcc = [...cookiesPortale, ...cookiesIva, ...cookiesAe];
+    const hasIvaserviziSession = allAfterAcc.some((c) => c.name === "FATSC" || c.name === "JSESSIONID" || c.name === "B2BCookie");
+    logger.info(
+      { url: afterAccUrl, hasIvaserviziSession, cookies: allAfterAcc.map((c) => `${c.domain}:${c.name}`) },
+      "After accessoFatturazione navigation",
+    );
 
-      // Go back to portale if we're on nonauth.html
-      if (!page.url().includes("portale.agenziaentrate.gov.it")) {
-        await page.goto("https://portale.agenziaentrate.gov.it/PortaleWeb/servizi", {
-          waitUntil: "networkidle0", timeout: 30000,
-        }).catch(() => {});
-      } else {
-        await page.goto("https://portale.agenziaentrate.gov.it/PortaleWeb/servizi", {
-          waitUntil: "networkidle0", timeout: 30000,
-        }).catch(() => {});
-      }
+    // ── Strategy 2: portale /PortaleWeb/servizi → find DCO card by HEADING ────
+    // The Servizi page has 61+ cards; all "Vai al servizio" links, but the CARD
+    // HEADING contains "Fattura" or "Corrispettivi". Find the card heading, then
+    // get the link within that card container.
+    if (!hasIvaserviziSession) {
+      logger.info("Strategy 2: portale servizi page → find DCO card by heading text");
+
+      await page.goto("https://portale.agenziaentrate.gov.it/PortaleWeb/servizi", {
+        waitUntil: "networkidle0", timeout: 30000,
+      }).catch(() => {});
       await new Promise((r) => setTimeout(r, 5000));
       await page.screenshot({ path: "/tmp/portale-servizi.png", fullPage: false }).catch(() => {});
 
-      // Enable the "titolari di Partita IVA" toggle — DCO is only visible when on
+      // Enable the "titolari di Partita IVA" toggle — DCO is only visible when ON
       const ivaToggle = await page.evaluate(`(function() {
         var all = Array.from(document.querySelectorAll('*'));
         for (var i = 0; i < all.length; i++) {
@@ -471,53 +472,48 @@ export async function loginWithSiampe(
         await new Promise((r) => setTimeout(r, 3000));
       }
 
-      // Scan ALL links for DCO — log full list so we can see what's there
-      const allLinks = await page.evaluate(`(function() {
-        return Array.from(document.querySelectorAll('a')).map(function(a) {
-          return { text: (a.textContent||'').trim().replace(/\\s+/g,' ').substring(0,60), href: a.href };
-        }).filter(function(l){ return l.text.length > 2; });
-      })()`) as Array<{ text: string; href: string }>;
-      logger.info({ count: allLinks.length, all: allLinks }, "All links on servizi page (full list)");
-
-      const dcoLink = allLinks.find((l) => {
-        const t = l.text.toLowerCase();
-        return t.includes("fattura") || t.includes("corrispettivi") || t.includes("documenti commerciali") ||
-               l.href.includes("ivaservizi") || l.href.includes("fatturae") || l.href.includes("corrispettivi");
-      });
-
-      if (!dcoLink) {
-        // Try searching
-        logger.info("DCO not found directly — trying search box");
-        const searchInput = await page.$('input[placeholder*="cerca" i], input[placeholder*="servizi" i]');
-        if (searchInput) {
-          await searchInput.click({ clickCount: 3 });
-          await page.keyboard.type("Fattura");
-          await page.evaluate(`(function(){
-            var btns = Array.from(document.querySelectorAll('button'));
-            var btn = btns.find(function(b){ return (b.textContent||'').trim() === 'Cerca'; });
-            if (btn) btn.click();
-          })()`);
-          await new Promise((r) => setTimeout(r, 4000));
-          await page.screenshot({ path: "/tmp/portale-search-results.png", fullPage: false }).catch(() => {});
-
-          const searchLinks = await page.evaluate(`(function() {
-            return Array.from(document.querySelectorAll('a')).map(function(a) {
-              return { text: (a.textContent||'').trim().replace(/\\s+/g,' ').substring(0,60), href: a.href };
-            }).filter(function(l){
-              var t = l.text.toLowerCase();
-              return t.includes('fattura') || t.includes('corrispettivi') || l.href.includes('ivaservizi');
-            });
-          })()`) as Array<{ text: string; href: string }>;
-          logger.info({ searchLinks }, "Links after search");
-          if (searchLinks.length > 0 && searchLinks[0]!.href) {
-            await page.goto(searchLinks[0]!.href, { waitUntil: "networkidle0", timeout: 30000 }).catch(() => {});
-            await new Promise((r) => setTimeout(r, 4000));
+      // Find DCO card by its heading text (card titles contain "Fattura"/"Corrispettivi")
+      // All "Vai al servizio" link texts are identical — search by PARENT CARD heading instead.
+      const dcoCardLink = await page.evaluate(`(function() {
+        var keywords = ['fattura', 'corrispettivi', 'documenti commerciali'];
+        // Search headings, then walk up to the card container and find the first <a> inside it
+        var headings = Array.from(document.querySelectorAll('h1,h2,h3,h4,h5,h6,p,span,div'));
+        for (var i = 0; i < headings.length; i++) {
+          var el = headings[i];
+          var children = el.querySelectorAll('*').length;
+          if (children > 3) continue; // skip containers with many children
+          var txt = (el.textContent||'').toLowerCase().trim();
+          var match = keywords.some(function(k){ return txt.includes(k); });
+          if (!match) continue;
+          if (txt.length > 100) continue; // skip large blocks
+          // Walk up to find the card container with a link
+          var card = el.closest('li, article, [class*="card"], [class*="service"], [class*="item"]') || el.parentElement;
+          for (var j = 0; j < 5 && card; j++) {
+            var link = card.querySelector('a[href]');
+            if (link) {
+              var r = link.getBoundingClientRect();
+              return { href: link.href, x: Math.round(r.left + r.width/2), y: Math.round(r.top + r.height/2), heading: txt.substring(0,60), cardTag: card.tagName };
+            }
+            card = card.parentElement;
           }
         }
+        return null;
+      })()`).catch(() => null) as { href: string; x: number; y: number; heading: string; cardTag: string } | null;
+
+      logger.info({ dcoCardLink }, "DCO card search result");
+
+      if (dcoCardLink?.href) {
+        logger.info({ href: dcoCardLink.href, heading: dcoCardLink.heading }, "Found DCO card — navigating");
+        await page.goto(dcoCardLink.href, { waitUntil: "networkidle0", timeout: 45000 }).catch(() => {});
+        await new Promise((r) => setTimeout(r, 5000));
       } else {
-        logger.info({ dcoLink }, "Found DCO link — clicking");
-        await page.goto(dcoLink.href, { waitUntil: "networkidle0", timeout: 30000 }).catch(() => {});
-        await new Promise((r) => setTimeout(r, 4000));
+        // Strategy 2b: try the known accessoFatturazione path directly but with a
+        // different waitUntil — sometimes the redirect chain takes longer
+        logger.info("DCO card not found — retrying accessoFatturazione with longer wait");
+        await page.goto("https://portale.agenziaentrate.gov.it/PortaleWeb/servizi/accessoFatturazione", {
+          waitUntil: "domcontentloaded", timeout: 60000,
+        }).catch(() => {});
+        await new Promise((r) => setTimeout(r, 8000));
       }
 
       await page.screenshot({ path: "/tmp/after-dco-click.png", fullPage: false }).catch(() => {});
@@ -525,7 +521,11 @@ export async function loginWithSiampe(
     }
 
     const finalUrl = page.url();
-    const allCookiesAfter = await page.cookies();
+    // Collect cookies from all relevant domains after final navigation
+    const finalCookiesPortale = await page.cookies("https://portale.agenziaentrate.gov.it").catch(() => []);
+    const finalCookiesIva    = await page.cookies("https://ivaservizi.agenziaentrate.gov.it").catch(() => []);
+    const finalCookiesAe     = await page.cookies("https://www.agenziaentrate.gov.it").catch(() => []);
+    const allCookiesAfter = [...finalCookiesPortale, ...finalCookiesIva, ...finalCookiesAe];
     const hasFinalSession = allCookiesAfter.some((c) => c.name === "FATSC" || c.name === "JSESSIONID" || c.name === "B2BCookie");
     logger.info(
       { url: finalUrl, hasFinalSession, onIvaservizi: finalUrl.includes("ivaservizi") && !finalUrl.includes("nonauth") },
@@ -533,16 +533,23 @@ export async function loginWithSiampe(
     );
     await page.screenshot({ path: "/tmp/dco-final.png", fullPage: false }).catch(() => {});
 
-    // Extract all cookies captured by Puppeteer (should now include LtpaToken2)
-    const puppeteerCookies = await page.cookies();
+    // Build cookie header merging all domains (dedup by name — last wins)
+    const cookieMap = new Map<string, string>();
+    for (const c of allCookiesAfter) {
+      cookieMap.set(c.name, c.value);
+    }
+    // Also add any cookies captured during page navigation for the current URL
+    const currentPageCookies = await page.cookies().catch(() => []);
+    for (const c of currentPageCookies) {
+      if (c.domain.includes("agenziaentrate.gov.it")) cookieMap.set(c.name, c.value);
+    }
     logger.info(
-      { count: puppeteerCookies.length, names: puppeteerCookies.map((c) => `${c.domain}:${c.name}`) },
-      "Puppeteer cookies after DCO navigation",
+      { count: cookieMap.size, names: Array.from(cookieMap.keys()) },
+      "All cookies collected (merged domains)",
     );
 
-    const siampeCookieHeader = puppeteerCookies
-      .filter((c) => c.domain.includes("agenziaentrate.gov.it") || c.domain.includes("ivaservizi"))
-      .map((c) => `${c.name}=${c.value}`)
+    const siampeCookieHeader = Array.from(cookieMap.entries())
+      .map(([k, v]) => `${k}=${v}`)
       .join("; ");
 
     // Additionally try Node.js fetch SSO chain to pick up any remaining

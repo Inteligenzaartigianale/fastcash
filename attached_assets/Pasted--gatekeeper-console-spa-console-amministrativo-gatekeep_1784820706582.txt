@@ -1,0 +1,121 @@
+ gatekeeper-console-spa - console amministrativo gatekeeper
+ * @version v1.0.0
+ * @link 
+ * @license ISC
+ *
+ */
+ 
+ 
+//'use strict'; <= Produce errore "In strict mode code, functions can only be declared at top level or immediately within another function.
+
+PageHeader.$inject = ['CONSTANTS'];
+
+function PageHeader( CONSTANTS ) {
+ return {
+  replace: true,
+  restrict: 'E',
+  scope: { title: '@', backLink: '@' },
+  controller: ['$window', '$q', '$http', '$timeout', 'CONSTANTS', 'BackEndService', 'linkGestioneSessioneService', function( $window, $q, $http, $timeout, CONSTANTS, BackEndService, linkGestioneSessioneService ) {
+   var vm = this;
+   var urlLogoutDatapower;
+   var urlNumeroNotifiche;
+   var linkNotifiche;
+   var urlNotificheLette;
+   var logoutURLs=[];
+   vm.numeroNotifiche = 0;
+
+   try {
+    vm.docLogin = sessionStorage.getItem( 'doc_login' ) == 'true';
+
+    vm.logout = function() {
+     if( vm.docLogin ) {
+      var uscita = CONSTANTS.LOGIN_PAGE + '/doc-commerciale';
+      logoutURLs.push( urlLogoutDatapower );
+     }
+     else
+      var uscita = urlLogoutDatapower;
+
+     logoutImpl( function() {
+      $window.location = uscita;
+     } );
+    };
+
+    function logoutImpl( cb ) {
+     if( confirm( 'Sei sicuro di voler uscire?' ) ) {
+      var username = localStorage.getItem( 'username' );
+      var saveuseron = localStorage.getItem( 'saveuseron' );
+      window.localStorage.clear();
+      ( username != null ) && ( username.length != 0 ) && localStorage.setItem( 'username', username );
+      ( saveuseron != null ) && ( saveuseron.length != 0 ) && localStorage.setItem( 'saveuseron', saveuseron );
+      var promises = [];
+
+      for( var i in logoutURLs ) {
+       //var promise = BackEndService.logout( logoutURLs[i] );
+       var promise = $http( { method: 'GET', url: logoutURLs[i], withCredentials: true } );
+       promises.push( promise );
+      }
+
+      $q.all( promises )['finally']( cb );
+     }
+    };
+
+    vm.not = function() {
+     BackEndService.resetNotificheLette( urlNotificheLette )['finally']( function() {
+      $window.location = linkNotifiche;
+     } );
+    };
+
+    BackEndService.getDatiTestata( CONSTANTS.URL_SERVIZIO_TESTATA ).then( function( response ) {
+     vm.userName = response.info.utenteAutenticato.cf;
+     vm.workingUser = response.info.utenzaLavoro.piva;
+
+     for( var i in response.links ) {
+      if( response.links[i].codice === 'HOME_PORTALE' )
+       vm.linkPortale = response.links[i].link;
+      else if( response.links[i].codice === 'HOME_NOTIFICHE' )
+       linkNotifiche = response.links[i].link;
+      else if( response.links[i].codice === 'HOME_ASSISTENZA' )
+       vm.linkInfo = response.links[i].link;
+      else if( response.links[i].codice === 'LOGOUT' )
+       urlLogoutDatapower = response.links[i].link;
+      else if( response.links[i].codice === 'CAMBIO_UTENZA_LAVORO' )
+       vm.linkCambioUtenza = response.links[i].link;
+      else if( response.links[i].codice === 'NUMERO_NOTIFICHE' )
+       urlNumeroNotifiche = response.links[i].link;
+      else if( response.links[i].codice === 'NOTIFICHE_LETTE' )
+       urlNotificheLette = response.links[i].link;
+     }
+
+     linkGestioneSessioneService.setLinkLogout( urlLogoutDatapower );
+     logoutURLs = response.logoutUrls;
+     vm.notifiche();
+    } );
+
+    vm.notifiche = function() {
+     var callNotifiche = function() {
+      BackEndService.getNotifiche( urlNumeroNotifiche ).then( function( result ) {
+       vm.numeroNotifiche = result.totaleDaLeggere;
+       $timeout( callNotifiche, 300000 );
+      } );
+     };
+     callNotifiche();
+    };
+   }
+   catch( e ) {
+    throw e;
+   };
+  } ],
+  controllerAs: 'vm',
+  templateUrl: 'html/includes/header.html' + CONSTANTS.URL_ARGS
+ };
+};
+
+module.exports = PageHeader;
+
+
+
+//////////////////
+// WEBPACK FOOTER
+// ./build_pre/js/directives/page-directives/page-header-directive.js
+// module id = 41
+// module chunks = 0

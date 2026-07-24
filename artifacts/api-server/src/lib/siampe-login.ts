@@ -413,43 +413,193 @@ export async function loginWithSiampe(
       }
     });
 
-    // ── Strategy: navigate DIRECTLY with Puppeteer browser to the DCO portale
-    // entry URL (Liferay scheda page), which triggers the SSO redirect chain
-    // that creates the ivaservizi WAS session (FATSC / JSESSIONID).
+    // ── Strategy: multi-step DCO session acquisition ─────────────────────────
     //
-    // We tried this via Node.js fetch earlier (returns 403 from Akamai), but
-    // the real browser with proper headers should pass Akamai's bot check.
+    // Goal: obtain FATSC / JSESSIONID from ivaservizi WAS.
+    // The WAS only creates the session when the request arrives via the portale
+    // SSO gateway — direct navigation to ivaservizi yields nonauth.html.
     //
-    // If the portale entry URL fails, fall back to navigating directly to
-    // ivaservizi (may still create the session via LtpaToken2 exchange).
-    const PORTALE_DCO_URL = "https://portale.agenziaentrate.gov.it/portale/web/guest/schede/comunicazioni/documenti-commerciali-online";
+    // Step 1 – portale home quick-links: the SPA may render DCO links directly
+    // Step 2 – portale Liferay scheda URL: the scheda page has a "Vai al servizio" button
+    // Step 3 – portale PortaleWeb/servizi: find and click the DCO card
+    // Step 4 – direct ivaservizi nav (last resort, may still work for some users)
+
     const IVA_DCO_URL = "https://ivaservizi.agenziaentrate.gov.it/ser/documenticommercialionline/";
 
-    logger.info("Navigating Puppeteer browser directly to portale DCO scheda URL");
-    await page.goto(PORTALE_DCO_URL, { waitUntil: "domcontentloaded", timeout: 30000 }).catch((e) => {
-      logger.warn({ err: String(e) }, "Portale DCO nav error (may have redirected)");
-    });
-    await new Promise((r) => setTimeout(r, 3000));
-    await page.screenshot({ path: "/tmp/portale-dco-scheda.png", fullPage: false }).catch(() => {});
+    /** Try to click any link/button that leads to DCO; returns href if found */
+    const findAndClickDCOLink = async (label: string): Promise<string | null> => {
+      const info = await page.evaluate(`(function() {
+        var keywords = ['documento commerciale', 'commerciale on line', 'scontrino', 'corrispettivi', 'dco', 'vai al servizio'];
+        // Collect all clickable elements
+        var candidates = Array.from(document.querySelectorAll('a[href], button'));
+        var found = null;
+        for (var i = 0; i < candidates.length; i++) {
+          var el = candidates[i];
+          var txt = (el.textContent || '').toLowerCase().trim();
+          var href = el.getAttribute('href') || '';
+          // Match by text
+          var textMatch = keywords.some(function(k){ return txt.includes(k); });
+          // Match by href pointing to ivaservizi or corrispettivi
+          var hrefMatch = href.includes('ivaservizi') || href.includes('corrispettiv') || href.includes('documenticommercial');
+          if (!textMatch && !hrefMatch) continue;
+          // Prefer links that point to ivaservizi directly
+          var r = el.getBoundingClientRect();
+          if (r.width === 0 || r.height === 0) continue;
+          found = { href: href, text: txt.substring(0, 80), x: Math.round(r.left + r.width/2), y: Math.round(r.top + r.height/2) };
+          if (hrefMatch) break; // ivaservizi link is best
+        }
+        return found;
+      })()`).catch(() => null) as { href: string; text: string; x: number; y: number } | null;
 
-    const urlAfterPortaleDCO = page.url();
-    const onIvaAfterPortale = urlAfterPortaleDCO.includes("ivaservizi.agenziaentrate.gov.it");
-    logger.info({ url: urlAfterPortaleDCO, onIvaservizi: onIvaAfterPortale }, "After portale DCO nav");
+      logger.info({ label, found: info }, "DCO link search result");
 
-    // Even if portale DCO nav didn't redirect us to ivaservizi, navigate there directly.
-    // LtpaToken2 scoped to .agenziaentrate.gov.it covers ivaservizi — the WAS may
-    // create the session on first direct browser visit.
-    if (!onIvaAfterPortale) {
-      logger.info("Not on ivaservizi yet — navigating directly to ivaservizi DCO URL");
+      if (!info) return null;
+
+      if (info.href && (info.href.startsWith("http") || info.href.startsWith("/"))) {
+        const absHref = info.href.startsWith("http") ? info.href : `https://portale.agenziaentrate.gov.it${info.href}`;
+        logger.info({ label, href: absHref }, "Navigating to DCO link href");
+        await page.goto(absHref, { waitUntil: "domcontentloaded", timeout: 30000 }).catch((e) => {
+          logger.warn({ err: String(e) }, "DCO link nav error");
+        });
+      } else {
+        logger.info({ label, x: info.x, y: info.y }, "Mouse-clicking DCO link");
+        await Promise.all([
+          page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 20000 }).catch(() => {}),
+          page.mouse.click(info.x, info.y),
+        ]);
+      }
+      return info.href;
+    };
+
+    /** Dump all links on current page for debugging */
+    const dumpPageLinks = async (tag: string) => {
+      const links = await page.evaluate(`(function(){
+        var els = Array.from(document.querySelectorAll('a[href], button'));
+        return els.slice(0, 40).map(function(el){
+          return { tag: el.tagName, txt: (el.textContent||'').trim().substring(0,60), href: el.getAttribute('href')||'' };
+        });
+      })()`).catch(() => []) as Array<{ tag: string; txt: string; href: string }>;
+      logger.info({ tag, url: page.url(), links }, "Page links dump");
+    };
+
+    let reachedIvaservizi = page.url().includes("ivaservizi.agenziaentrate.gov.it");
+
+    // ── Step 1: check portale HOME for DCO quick-links ────────────────────────
+    if (!reachedIvaservizi) {
+      logger.info("Step 1: scanning portale HOME for DCO links");
+      await page.screenshot({ path: "/tmp/portale-home.png", fullPage: false }).catch(() => {});
+      const homePageText = await page.evaluate("document.body?.innerText?.toLowerCase() || ''").catch(() => "") as string;
+      const hasDCOHint = homePageText.includes("documento") || homePageText.includes("corrispettivi") || homePageText.includes("scontrino");
+      logger.info({ hasDCOHint, url: page.url() }, "Portale home DCO hint");
+
+      if (hasDCOHint) {
+        await findAndClickDCOLink("portale-home");
+        await new Promise((r) => setTimeout(r, 3000));
+        reachedIvaservizi = page.url().includes("ivaservizi.agenziaentrate.gov.it") && !page.url().includes("nonauth");
+        logger.info({ reachedIvaservizi, url: page.url() }, "After portale home DCO click");
+      }
+    }
+
+    // ── Step 2: portale Liferay scheda page ───────────────────────────────────
+    if (!reachedIvaservizi) {
+      const PORTALE_SCHEDA_URL = "https://portale.agenziaentrate.gov.it/portale/web/guest/schede/comunicazioni/documenti-commerciali-online";
+      logger.info("Step 2: navigating to portale Liferay scheda DCO");
+      await page.goto(PORTALE_SCHEDA_URL, { waitUntil: "domcontentloaded", timeout: 30000 }).catch((e) => {
+        logger.warn({ err: String(e) }, "Scheda nav error");
+      });
+      await new Promise((r) => setTimeout(r, 5000)); // Liferay needs time to render
+      await page.screenshot({ path: "/tmp/portale-dco-scheda.png", fullPage: false }).catch(() => {});
+      logger.info({ url: page.url() }, "After scheda nav");
+      await dumpPageLinks("scheda");
+
+      reachedIvaservizi = page.url().includes("ivaservizi.agenziaentrate.gov.it") && !page.url().includes("nonauth");
+
+      if (!reachedIvaservizi) {
+        // Click "Vai al servizio" or any DCO link on the scheda page
+        await findAndClickDCOLink("portale-scheda");
+        await new Promise((r) => setTimeout(r, 4000));
+        await page.screenshot({ path: "/tmp/portale-scheda-after-click.png", fullPage: false }).catch(() => {});
+        reachedIvaservizi = page.url().includes("ivaservizi.agenziaentrate.gov.it") && !page.url().includes("nonauth");
+        logger.info({ reachedIvaservizi, url: page.url() }, "After scheda click");
+      }
+    }
+
+    // ── Step 3: portale PortaleWeb/servizi — intercept API + find DCO card ────
+    if (!reachedIvaservizi) {
+      logger.info("Step 3: portale PortaleWeb/servizi — intercept API responses");
+
+      // Intercept network responses to find DCO service URL from API
+      let dcoApiUrl: string | null = null;
+      const responseHandler = async (res: { url: () => string; text: () => Promise<string>; headers: () => Record<string, string> }) => {
+        const url = res.url();
+        if (!url.includes("/api/") && !url.includes("/servizi")) return;
+        try {
+          const ct = res.headers()["content-type"] ?? "";
+          if (!ct.includes("json")) return;
+          const txt = await res.text().catch(() => "");
+          if (!txt.includes("documento") && !txt.includes("corrispettivi") && !txt.includes("scontrino")) return;
+          logger.info({ url: url.substring(0, 120), bodySnippet: txt.substring(0, 300) }, "Portale API response with DCO keywords");
+          // Try to extract a URL pointing to ivaservizi or the service
+          const urlMatch = txt.match(/"(https?:\/\/[^"]*(?:ivaservizi|corrispettiv|documenticommercial)[^"]*)"/);
+          if (urlMatch) dcoApiUrl = urlMatch[1]!;
+        } catch { /* ignore */ }
+      };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      page.on("response", responseHandler as any);
+
+      await page.goto("https://portale.agenziaentrate.gov.it/PortaleWeb/servizi", {
+        waitUntil: "networkidle0", timeout: 20000,
+      }).catch(() => {});
+      await new Promise((r) => setTimeout(r, 3000));
+      await page.screenshot({ path: "/tmp/portale-servizi.png", fullPage: false }).catch(() => {});
+
+      // Enable IVA toggle
+      const toggleCoords = await page.evaluate(`(function(){
+        var els = Array.from(document.querySelectorAll('label, span, div'));
+        for (var i = 0; i < els.length; i++) {
+          var t = (els[i].textContent||'').toLowerCase();
+          if (!t.includes('partita iva') || t.length > 200) continue;
+          var inp = els[i].querySelector('input[type="checkbox"]') || document.querySelector('input[type="checkbox"]');
+          if (inp && !inp.checked) {
+            var tgt = els[i].closest('label') || els[i];
+            var r = tgt.getBoundingClientRect();
+            if (r.width > 0) return { x: Math.round(r.left+r.width/2), y: Math.round(r.top+r.height/2) };
+          }
+        }
+        return null;
+      })()`).catch(() => null) as { x: number; y: number } | null;
+
+      if (toggleCoords) {
+        await page.mouse.click(toggleCoords.x, toggleCoords.y);
+        await new Promise((r) => setTimeout(r, 4000));
+        logger.info("IVA toggle clicked, waiting for card reload");
+      }
+
+      await dumpPageLinks("servizi-after-toggle");
+
+      if (dcoApiUrl) {
+        logger.info({ dcoApiUrl }, "Found DCO URL from API intercept — navigating");
+        await page.goto(dcoApiUrl, { waitUntil: "domcontentloaded", timeout: 30000 }).catch(() => {});
+        await new Promise((r) => setTimeout(r, 3000));
+      } else {
+        await findAndClickDCOLink("portale-servizi");
+        await new Promise((r) => setTimeout(r, 3000));
+      }
+
+      await page.screenshot({ path: "/tmp/portale-servizi-after-click.png", fullPage: false }).catch(() => {});
+      reachedIvaservizi = page.url().includes("ivaservizi.agenziaentrate.gov.it") && !page.url().includes("nonauth");
+      logger.info({ reachedIvaservizi, url: page.url() }, "After portale servizi step");
+    }
+
+    // ── Step 4: direct ivaservizi nav (last resort) ───────────────────────────
+    if (!reachedIvaservizi) {
+      logger.info("Step 4: direct ivaservizi nav (last resort — may yield nonauth)");
       await page.goto(IVA_DCO_URL, { waitUntil: "domcontentloaded", timeout: 30000 }).catch((e) => {
         logger.warn({ err: String(e) }, "Direct ivaservizi nav error");
       });
       await new Promise((r) => setTimeout(r, 4000));
       await page.screenshot({ path: "/tmp/ivaservizi-direct.png", fullPage: false }).catch(() => {});
       logger.info({ url: page.url() }, "After direct ivaservizi nav");
-    } else {
-      await new Promise((r) => setTimeout(r, 2000));
-      await page.screenshot({ path: "/tmp/ivaservizi-direct.png", fullPage: false }).catch(() => {});
     }
 
     const finalUrl = page.url();

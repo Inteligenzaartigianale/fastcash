@@ -398,154 +398,57 @@ export async function loginWithSiampe(
     await page.screenshot({ path: "/tmp/siampe-step5-after-login.png", fullPage: false }).catch(() => {});
     logger.info({ url: page.url() }, "Landed on AE after login");
 
-    // Wait for portale home to fully render
-    await new Promise((r) => setTimeout(r, 5000));
+    // Brief pause for portale home to initialize (cookies only — no need to render the SPA)
+    await new Promise((r) => setTimeout(r, 2000));
     await page.screenshot({ path: "/tmp/portale-home.png", fullPage: false }).catch(() => {});
 
-    // ── Intercept Set-Cookie headers from both portale and ivaservizi ────────
+    // ── Intercept Set-Cookie headers from ivaservizi ─────────────────────────
     page.on("response", (res) => {
       const url = res.url();
-      if (url.includes("ivaservizi.agenziaentrate.gov.it") || url.includes("accessoFatturazione")) {
+      if (url.includes("ivaservizi.agenziaentrate.gov.it")) {
         const sc = res.headers()["set-cookie"];
         const loc = res.headers()["location"] ?? "";
-        if (sc) logger.info({ url: url.substring(0, 100), setCookie: sc.substring(0, 400) }, "Set-Cookie received");
-        else logger.info({ url: url.substring(0, 100), status: res.status(), location: loc.substring(0, 100) }, "Response (no Set-Cookie)");
+        if (sc) logger.info({ url: url.substring(0, 120), setCookie: sc.substring(0, 400) }, "Set-Cookie from ivaservizi");
+        else logger.info({ url: url.substring(0, 120), status: res.status(), location: loc.substring(0, 120) }, "ivaservizi response");
       }
     });
 
-    // ── Strategy: portale servizi → categoria "Trasmissioni telematiche" → DCO card ──
-    // DCO ("Documento Commerciale Online" / "corrispettivi") is in the
-    // "Trasmissioni telematiche" category and only appears when the
-    // "titolari di Partita IVA" toggle is ON.
-    // All card links say "Vai al servizio" — we find DCO by its card HEADING.
-    logger.info("Strategy: portale servizi → enable IVA toggle → find DCO card by heading");
+    // ── Strategy: navigate DIRECTLY with Puppeteer browser to the DCO portale
+    // entry URL (Liferay scheda page), which triggers the SSO redirect chain
+    // that creates the ivaservizi WAS session (FATSC / JSESSIONID).
+    //
+    // We tried this via Node.js fetch earlier (returns 403 from Akamai), but
+    // the real browser with proper headers should pass Akamai's bot check.
+    //
+    // If the portale entry URL fails, fall back to navigating directly to
+    // ivaservizi (may still create the session via LtpaToken2 exchange).
+    const PORTALE_DCO_URL = "https://portale.agenziaentrate.gov.it/portale/web/guest/schede/comunicazioni/documenti-commerciali-online";
+    const IVA_DCO_URL = "https://ivaservizi.agenziaentrate.gov.it/ser/documenticommercialionline/";
 
-    await page.goto("https://portale.agenziaentrate.gov.it/PortaleWeb/servizi", {
-      waitUntil: "networkidle0", timeout: 30000,
-    }).catch(() => {});
-    await new Promise((r) => setTimeout(r, 4000));
-    await page.screenshot({ path: "/tmp/portale-servizi.png", fullPage: false }).catch(() => {});
+    logger.info("Navigating Puppeteer browser directly to portale DCO scheda URL");
+    await page.goto(PORTALE_DCO_URL, { waitUntil: "domcontentloaded", timeout: 30000 }).catch((e) => {
+      logger.warn({ err: String(e) }, "Portale DCO nav error (may have redirected)");
+    });
+    await new Promise((r) => setTimeout(r, 3000));
+    await page.screenshot({ path: "/tmp/portale-dco-scheda.png", fullPage: false }).catch(() => {});
 
-    // Step 1: enable "titolari di Partita IVA" toggle if it is currently OFF
-    // The toggle text is "Mostra anche i servizi per i soggetti titolari di Partita IVA"
-    const toggleResult = await page.evaluate(`(function() {
-      // Find the toggle input (checkbox) near the "Partita IVA" label
-      var labels = Array.from(document.querySelectorAll('label, span, div'));
-      for (var i = 0; i < labels.length; i++) {
-        var txt = (labels[i].textContent||'').toLowerCase();
-        if (!txt.includes('partita iva') || txt.length > 200) continue;
-        // Check if it contains a checkbox/toggle input
-        var inp = labels[i].querySelector('input[type="checkbox"]') ||
-                  labels[i].closest('label')?.querySelector('input') ||
-                  document.querySelector('input[type="checkbox"]');
-        if (inp) {
-          var isOn = inp.checked;
-          if (!isOn) {
-            // Click the label or the nearest clickable element
-            var clickTarget = labels[i].closest('label') || labels[i];
-            var r = clickTarget.getBoundingClientRect();
-            if (r.width > 0) return { x: Math.round(r.left+r.width/2), y: Math.round(r.top+r.height/2), wasOff: true };
-          }
-          return { wasOff: false };
-        }
-        // No checkbox found — try clicking the element itself
-        var r2 = labels[i].getBoundingClientRect();
-        if (r2.width > 0 && r2.height > 0 && r2.height < 80) {
-          return { x: Math.round(r2.left+r2.width/2), y: Math.round(r2.top+r2.height/2), wasOff: 'unknown' };
-        }
-      }
-      return null;
-    })()`).catch(() => null) as { x?: number; y?: number; wasOff: boolean | string } | null;
+    const urlAfterPortaleDCO = page.url();
+    const onIvaAfterPortale = urlAfterPortaleDCO.includes("ivaservizi.agenziaentrate.gov.it");
+    logger.info({ url: urlAfterPortaleDCO, onIvaservizi: onIvaAfterPortale }, "After portale DCO nav");
 
-    logger.info({ toggleResult }, "IVA toggle state");
-    if (toggleResult?.x && toggleResult?.y) {
-      await page.mouse.click(toggleResult.x, toggleResult.y);
-      await new Promise((r) => setTimeout(r, 3000));
-      logger.info("Clicked IVA toggle");
-    }
-
-    // Step 2: find DCO card by heading — NO category filter (it excludes DCO).
-    // DCO card title is "Documento commerciale on line".
-    // Keywords: "documento commerciale", "commerciale on line", "scontrino".
-    // NOT "fattura" (fatturazione elettronica B2B) and NOT "corrispettivi" (not in card name).
-    const findDCOCard = async () => page.evaluate(`(function() {
-      var keywords = ['documento commerciale', 'commerciale on line', 'scontrino'];
-      var allEls = Array.from(document.querySelectorAll('h1,h2,h3,h4,h5,h6,p,span,div,a'));
-      for (var i = 0; i < allEls.length; i++) {
-        var el = allEls[i];
-        if (el.querySelectorAll('*').length > 4) continue;
-        var txt = (el.textContent||'').toLowerCase().trim();
-        if (!keywords.some(function(k){ return txt.includes(k); })) continue;
-        if (txt.length > 120) continue;
-        // Walk up to find card container with a link
-        var card = el;
-        for (var j = 0; j < 7; j++) {
-          card = card.parentElement;
-          if (!card) break;
-          var link = card.querySelector('a[href]');
-          if (link && link.href && !link.href.includes('/servizi') && link.href.length > 30) {
-            var r = link.getBoundingClientRect();
-            return { href: link.href, x: Math.round(r.left+r.width/2), y: Math.round(r.top+r.height/2), heading: txt.substring(0,60) };
-          }
-        }
-      }
-      return null;
-    })()`).catch(() => null) as { href: string; x: number; y: number; heading: string } | null;
-
-    // Wait 5s for IVA toggle to fully reload the service list
-    await new Promise((r) => setTimeout(r, 5000));
-    let dcoCard = await findDCOCard();
-    logger.info({ dcoCard }, "DCO card after IVA toggle (no category filter)");
-
-    // Step 3: if not found, use search box with "documento"
-    if (!dcoCard) {
-      logger.info("DCO card not found — searching 'documento' in search box");
-      // Clear any active category filter first (click the active one to deselect)
-      await page.evaluate(`(function(){
-        var active = Array.from(document.querySelectorAll('button.active, button[aria-pressed="true"], a.active'));
-        active.forEach(function(b){ b.click(); });
-      })()`).catch(() => {});
-      await new Promise((r) => setTimeout(r, 1000));
-
-      const searchInput = await page.$('input[placeholder*="cerca" i], input[placeholder*="serviz" i], input[type="search"]');
-      if (searchInput) {
-        await searchInput.click({ clickCount: 3 });
-        await page.keyboard.type("documento");
-        await page.keyboard.press("Enter");
-        await new Promise((r) => setTimeout(r, 3000));
-        await page.screenshot({ path: "/tmp/portale-search-results.png", fullPage: false }).catch(() => {});
-        dcoCard = await findDCOCard();
-        logger.info({ dcoCard }, "DCO card after 'documento' search");
-      }
-    }
-
-    // Log all card headings visible so we can diagnose if still not found
-    if (!dcoCard) {
-      const visibleHeadings = await page.evaluate(`(function(){
-        return Array.from(document.querySelectorAll('h2,h3,h4')).map(function(h){
-          return { tag: h.tagName, text: (h.textContent||'').trim().substring(0,60) };
-        }).filter(function(h){ return h.text.length > 3; });
-      })()`).catch(() => []);
-      logger.info({ visibleHeadings }, "Visible headings (DCO still not found)");
-    }
-
-    logger.info({ dcoCard }, "DCO card result");
-
-    let hasIvaserviziSession = false;
-    if (dcoCard?.href) {
-      logger.info({ href: dcoCard.href, heading: dcoCard.heading }, "Navigating to DCO card link");
-      await page.goto(dcoCard.href, { waitUntil: "networkidle0", timeout: 45000 }).catch(() => {});
-      await new Promise((r) => setTimeout(r, 5000));
+    // Even if portale DCO nav didn't redirect us to ivaservizi, navigate there directly.
+    // LtpaToken2 scoped to .agenziaentrate.gov.it covers ivaservizi — the WAS may
+    // create the session on first direct browser visit.
+    if (!onIvaAfterPortale) {
+      logger.info("Not on ivaservizi yet — navigating directly to ivaservizi DCO URL");
+      await page.goto(IVA_DCO_URL, { waitUntil: "domcontentloaded", timeout: 30000 }).catch((e) => {
+        logger.warn({ err: String(e) }, "Direct ivaservizi nav error");
+      });
+      await new Promise((r) => setTimeout(r, 4000));
       await page.screenshot({ path: "/tmp/ivaservizi-direct.png", fullPage: false }).catch(() => {});
-
-      // Collect cookies from all relevant domains
-      const c1 = await page.cookies("https://portale.agenziaentrate.gov.it").catch(() => []);
-      const c2 = await page.cookies("https://ivaservizi.agenziaentrate.gov.it").catch(() => []);
-      const c3 = await page.cookies().catch(() => []);
-      const allC = [...c1, ...c2, ...c3];
-      hasIvaserviziSession = allC.some((c) => c.name === "FATSC" || c.name === "JSESSIONID" || c.name === "B2BCookie");
-      logger.info({ url: page.url(), hasIvaserviziSession, cookies: allC.map((c) => `${c.domain}:${c.name}`) }, "After DCO card navigation");
+      logger.info({ url: page.url() }, "After direct ivaservizi nav");
     } else {
+      await new Promise((r) => setTimeout(r, 2000));
       await page.screenshot({ path: "/tmp/ivaservizi-direct.png", fullPage: false }).catch(() => {});
     }
 

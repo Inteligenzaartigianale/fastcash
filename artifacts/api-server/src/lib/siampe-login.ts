@@ -524,36 +524,35 @@ export async function loginWithSiampe(
       }
     }
 
-    // ── Step 3: portale PortaleWeb/servizi — intercept API + find DCO card ────
+    // ── Step 3: portale PortaleWeb/servizi — capture listaServizi API ─────────
+    // The portale calls portale-rest/rs/servizi/listaServizi which returns a JSON
+    // array of ALL service cards including their portale redirect URLs.
+    // After enabling the IVA toggle, a second call includes DCO (Partita IVA services).
+    // We capture the full JSON, find DCO by keywords, and navigate to its URL.
     if (!reachedIvaservizi) {
-      logger.info("Step 3: portale PortaleWeb/servizi — intercept API responses");
+      logger.info("Step 3: portale PortaleWeb/servizi — capturing listaServizi API");
 
-      // Intercept network responses to find DCO service URL from API
-      let dcoApiUrl: string | null = null;
-      const responseHandler = async (res: { url: () => string; text: () => Promise<string>; headers: () => Record<string, string> }) => {
+      // Collect ALL listaServizi/listaServiziUtili responses (including after toggle)
+      const capturedServiceLists: Array<{ url: string; body: string }> = [];
+
+      const serviceApiHandler = async (res: import("puppeteer").HTTPResponse) => {
         const url = res.url();
-        if (!url.includes("/api/") && !url.includes("/servizi")) return;
+        if (!url.includes("listaServizi") && !url.includes("listaServiziUtili")) return;
         try {
-          const ct = res.headers()["content-type"] ?? "";
-          if (!ct.includes("json")) return;
-          const txt = await res.text().catch(() => "");
-          if (!txt.includes("documento") && !txt.includes("corrispettivi") && !txt.includes("scontrino")) return;
-          logger.info({ url: url.substring(0, 120), bodySnippet: txt.substring(0, 300) }, "Portale API response with DCO keywords");
-          // Try to extract a URL pointing to ivaservizi or the service
-          const urlMatch = txt.match(/"(https?:\/\/[^"]*(?:ivaservizi|corrispettiv|documenticommercial)[^"]*)"/);
-          if (urlMatch) dcoApiUrl = urlMatch[1]!;
+          const body = await res.text().catch(() => "");
+          capturedServiceLists.push({ url, body });
+          logger.info({ url: url.substring(0, 120), bodyLen: body.length }, "Captured service list API");
         } catch { /* ignore */ }
       };
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      page.on("response", responseHandler as any);
+      page.on("response", serviceApiHandler);
 
       await page.goto("https://portale.agenziaentrate.gov.it/PortaleWeb/servizi", {
-        waitUntil: "networkidle0", timeout: 20000,
+        waitUntil: "networkidle0", timeout: 25000,
       }).catch(() => {});
-      await new Promise((r) => setTimeout(r, 3000));
+      await new Promise((r) => setTimeout(r, 2000));
       await page.screenshot({ path: "/tmp/portale-servizi.png", fullPage: false }).catch(() => {});
 
-      // Enable IVA toggle
+      // Enable IVA toggle (triggers new listaServizi call with IVA-only services)
       const toggleCoords = await page.evaluate(`(function(){
         var els = Array.from(document.querySelectorAll('label, span, div'));
         for (var i = 0; i < els.length; i++) {
@@ -571,23 +570,73 @@ export async function loginWithSiampe(
 
       if (toggleCoords) {
         await page.mouse.click(toggleCoords.x, toggleCoords.y);
-        await new Promise((r) => setTimeout(r, 4000));
-        logger.info("IVA toggle clicked, waiting for card reload");
+        await new Promise((r) => setTimeout(r, 5000)); // wait for reload + new API call
+        logger.info("IVA toggle clicked, waiting for listaServizi reload");
       }
 
-      await dumpPageLinks("servizi-after-toggle");
+      // Parse all captured service lists and find DCO entry
+      const dcoKeywords = ["documento commerciale", "commerciale on line", "scontrino", "corrispettiv", "documenti commercial"];
+      let dcoServiceUrl: string | null = null;
+      let dcoServiceDesc: string | null = null;
 
-      if (dcoApiUrl) {
-        logger.info({ dcoApiUrl }, "Found DCO URL from API intercept — navigating");
-        await page.goto(dcoApiUrl, { waitUntil: "domcontentloaded", timeout: 30000 }).catch(() => {});
-        await new Promise((r) => setTimeout(r, 3000));
+      for (const { url: apiUrl, body } of capturedServiceLists) {
+        let parsed: unknown;
+        try { parsed = JSON.parse(body); } catch { continue; }
+
+        // The response is { listaServizi: [...] } or similar
+        const services = (
+          (parsed as { listaServizi?: unknown[] })?.listaServizi ??
+          (Array.isArray(parsed) ? parsed : [])
+        ) as Array<{ codice?: string; descrizione?: string; url?: string }>;
+
+        logger.info({ apiUrl: apiUrl.substring(0, 80), count: services.length }, "Parsed service list");
+
+        // Log all services for debugging
+        for (const svc of services) {
+          if (svc.descrizione) {
+            logger.info({ codice: svc.codice, descrizione: svc.descrizione, url: svc.url }, "Service entry");
+          }
+        }
+
+        const dcoEntry = services.find((svc) => {
+          const desc = (svc.descrizione ?? "").toLowerCase();
+          return dcoKeywords.some((kw) => desc.includes(kw));
+        });
+
+        if (dcoEntry?.url) {
+          dcoServiceUrl = dcoEntry.url;
+          dcoServiceDesc = dcoEntry.descrizione ?? null;
+          logger.info({ dcoServiceUrl, dcoServiceDesc, codice: dcoEntry.codice }, "Found DCO service in API!");
+          break;
+        }
+      }
+
+      if (dcoServiceUrl) {
+        // Build absolute URL (portale URLs are relative like /PortaleWeb/servizi/...)
+        const absUrl = dcoServiceUrl.startsWith("http")
+          ? dcoServiceUrl
+          : `https://portale.agenziaentrate.gov.it${dcoServiceUrl}`;
+        logger.info({ absUrl, dcoServiceDesc }, "Navigating to DCO portale service URL");
+        await page.goto(absUrl, { waitUntil: "domcontentloaded", timeout: 30000 }).catch((e) => {
+          logger.warn({ err: String(e) }, "DCO service URL nav error");
+        });
+        await new Promise((r) => setTimeout(r, 5000));
+        await page.screenshot({ path: "/tmp/portale-dco-service.png", fullPage: false }).catch(() => {});
+        logger.info({ url: page.url() }, "After DCO service URL nav");
+        reachedIvaservizi = page.url().includes("ivaservizi.agenziaentrate.gov.it") && !page.url().includes("nonauth");
       } else {
-        await findAndClickDCOLink("portale-servizi");
-        await new Promise((r) => setTimeout(r, 3000));
+        // DCO not found in API — log all service descriptions for manual inspection
+        logger.warn({ capturedLists: capturedServiceLists.length }, "DCO not found in listaServizi — falling back to DOM click");
+        await dumpPageLinks("servizi-after-toggle");
+        // Try clicking any DCO-related link by DOM
+        const clicked = await findAndClickDCOLink("portale-servizi-dom");
+        if (clicked !== null) {
+          await new Promise((r) => setTimeout(r, 3000));
+          reachedIvaservizi = page.url().includes("ivaservizi.agenziaentrate.gov.it") && !page.url().includes("nonauth");
+        }
       }
 
-      await page.screenshot({ path: "/tmp/portale-servizi-after-click.png", fullPage: false }).catch(() => {});
-      reachedIvaservizi = page.url().includes("ivaservizi.agenziaentrate.gov.it") && !page.url().includes("nonauth");
+      await page.screenshot({ path: "/tmp/portale-servizi-result.png", fullPage: false }).catch(() => {});
       logger.info({ reachedIvaservizi, url: page.url() }, "After portale servizi step");
     }
 

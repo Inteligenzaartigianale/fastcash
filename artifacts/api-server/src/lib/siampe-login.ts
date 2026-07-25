@@ -10,15 +10,16 @@ import puppeteer, { type Browser, type Page } from "puppeteer";
 import { execSync, spawn } from "node:child_process";
 import { logger } from "./logger.js";
 
-// Navigate directly to SIAMPE login — more reliable than going through the DCO SPA
-// which sometimes serves nonauth.html when Chrome 92 has stale cookies.
-const SIAMPE_LOGIN_URL =
-  "https://iampe.agenziaentrate.gov.it/sam/UI/Login?realm=/agenziaentrate&goto=" +
-  encodeURIComponent("https://ivaservizi.agenziaentrate.gov.it/ser/documenticommercialionline/");
-
-// After login, hit this URL to ensure DCO-specific session cookies are set
+// The ivaservizi DCO entry point — Angular SPA that redirects to nonauth.html if unauthenticated.
+// nonauth.html contains a login link with the correct SIAMPE goto parameter that creates
+// the WAS session (FATSC/JSESSIONID) on return.  We start here, extract the link, then login.
 const DCO_URL =
   "https://ivaservizi.agenziaentrate.gov.it/ser/documenticommercialionline/";
+
+// Fallback SIAMPE login URL (used only if nonauth.html has no login link)
+const SIAMPE_LOGIN_URL_FALLBACK =
+  "https://iampe.agenziaentrate.gov.it/sam/UI/Login?realm=/agenziaentrate&goto=" +
+  encodeURIComponent("https://ivaservizi.agenziaentrate.gov.it/ser/documenticommercialionline/");
 
 export interface LoginCredentials {
   codiceFiscale: string;
@@ -200,6 +201,15 @@ async function startBrowser(): Promise<{ browser: Browser; cleanup: () => void }
 }
 
 // ─── Login flow ───────────────────────────────────────────────────────────────
+//
+// STRATEGY: Start from ivaservizi (not SIAMPE directly).
+//
+// When a real user accesses ivaservizi, they land on nonauth.html which has a
+// login link pointing to SIAMPE with the correct `goto` parameter.  Using that
+// link (rather than a hardcoded SIAMPE URL) ensures SIAMPE redirects back to
+// ivaservizi after authentication, creating the WAS session (FATSC/JSESSIONID).
+// Hardcoded SIAMPE URLs with goto=ivaservizi were always landing on portale
+// (the user's default home) instead of ivaservizi, bypassing the SSO handshake.
 
 export async function loginWithSiampe(
   credentials: LoginCredentials,
@@ -221,31 +231,95 @@ export async function loginWithSiampe(
     await client.send("Network.clearBrowserCookies");
     logger.info("Cleared browser cookies");
 
-    // Pre-set Liferay portal bootstrap cookies for .agenziaentrate.gov.it.
-    // The real browser sends these on every request including to ivaservizi
-    // because they are scoped to the parent domain. Without them the WAS/Liferay
-    // SSO handshake may refuse to create a new ivaservizi session.
-    await page.setCookie(
-      { name: "COOKIE_SUPPORT", value: "true",  domain: ".agenziaentrate.gov.it", path: "/" },
-      { name: "GUEST_LANGUAGE_ID", value: "it_IT", domain: ".agenziaentrate.gov.it", path: "/" },
-    );
-    logger.info("Pre-set COOKIE_SUPPORT + GUEST_LANGUAGE_ID for .agenziaentrate.gov.it");
+    // ── Intercept Set-Cookie headers from ivaservizi (global, fires throughout) ──
+    page.on("response", (res) => {
+      const url = res.url();
+      if (!url.includes("ivaservizi.agenziaentrate.gov.it")) return;
+      const sc = res.headers()["set-cookie"];
+      const loc = res.headers()["location"] ?? "";
+      if (sc) {
+        logger.info({ url: url.substring(0, 120), setCookie: sc.substring(0, 400) }, "Set-Cookie from ivaservizi");
+      } else {
+        logger.info({ url: url.substring(0, 120), status: res.status(), location: loc.substring(0, 120) }, "ivaservizi response");
+      }
+    });
 
-    // Navigate directly to SIAMPE login page (more reliable than going through DCO SPA)
-    logger.info("Navigating to SIAMPE login");
-    await page.goto(SIAMPE_LOGIN_URL, { waitUntil: "domcontentloaded", timeout: 90000 });
+    // ── Phase 1: navigate to ivaservizi → nonauth.html → extract login link ──
+    logger.info({ url: DCO_URL }, "Navigating to ivaservizi DCO URL to get nonauth login link");
+    await page.goto(DCO_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
+    // Angular SPA needs a few seconds to bootstrap and redirect to nonauth.html
+    await new Promise((r) => setTimeout(r, 5000));
+    await page.screenshot({ path: "/tmp/nonauth-before-login.png", fullPage: false }).catch(() => {});
+    logger.info({ url: page.url() }, "After initial ivaservizi nav");
+
+    // Extract all links from the nonauth page for debugging + login link search
+    const pageLinks = await page.evaluate(`(function(){
+      return Array.from(document.querySelectorAll('a[href], button, [onclick]')).map(function(el){
+        return {
+          tag: el.tagName,
+          txt: (el.textContent||'').trim().substring(0,80),
+          href: el.getAttribute('href') || '',
+          onclick: (el.getAttribute('onclick')||'').substring(0,120)
+        };
+      });
+    })()`) as Array<{ tag: string; txt: string; href: string; onclick: string }>;
+    logger.info({ url: page.url(), count: pageLinks.length, links: pageLinks.slice(0, 30) }, "nonauth page links");
+
+    // Also try extracting the login URL from the Angular app's JavaScript config
+    // (Some SPAs embed the SIAMPE URL as a JS constant rather than a DOM link)
+    const jsLoginUrl = await page.evaluate(`(function(){
+      // Check if Angular has populated window.__env or similar config objects
+      var env = window.__env || window.env || window.APP_CONFIG || {};
+      var keys = ['loginUrl', 'authUrl', 'siampeUrl', 'login_url'];
+      for (var i = 0; i < keys.length; i++) {
+        if (env[keys[i]]) return env[keys[i]];
+      }
+      return null;
+    })()`) as string | null;
+    logger.info({ jsLoginUrl }, "Angular JS login URL extraction");
+
+    // Find the login link: prefer links with 'iampe' or 'Login' in href, or login-related text
+    const loginHref = await page.evaluate(`(function(){
+      var links = Array.from(document.querySelectorAll('a[href]'));
+      // Priority 1: link directly to SIAMPE (iampe.agenziaentrate.gov.it)
+      for (var i = 0; i < links.length; i++) {
+        if (links[i].href.includes('iampe') || links[i].href.includes('Login')) {
+          return links[i].href;
+        }
+      }
+      // Priority 2: any link with login-related text
+      var loginTexts = ['accedi', 'login', 'entra', 'autent'];
+      for (var j = 0; j < links.length; j++) {
+        var txt = (links[j].textContent||'').toLowerCase();
+        if (loginTexts.some(function(k){ return txt.includes(k); })) {
+          return links[j].href;
+        }
+      }
+      return null;
+    })()`) as string | null;
+
+    logger.info({ loginHref, jsLoginUrl }, "Extracted login link from nonauth");
+
+    // Build the SIAMPE URL to navigate to — prefer the one extracted from the page
+    let siampeUrl = loginHref || jsLoginUrl || SIAMPE_LOGIN_URL_FALLBACK;
+
+    // If the link is a relative path on ivaservizi, make it absolute
+    if (siampeUrl && siampeUrl.startsWith("/")) {
+      siampeUrl = `https://ivaservizi.agenziaentrate.gov.it${siampeUrl}`;
+    }
+
+    logger.info({ siampeUrl }, "Navigating to SIAMPE login");
+    await page.goto(siampeUrl, { waitUntil: "domcontentloaded", timeout: 90000 });
+    await new Promise((r) => setTimeout(r, 2000));
+    await page.screenshot({ path: "/tmp/siampe-step1.png", fullPage: false }).catch(() => {});
+    logger.info({ url: page.url() }, "On SIAMPE login page");
+
+    // ── Phase 2: fill Fisconline credentials ─────────────────────────────────
+    // The SIAMPE login page opens on SPID tab — switch to Fisconline/Entratel.
+    // Use real mouse coordinates so React updates the tab state.
+    logger.info("Clicking Fisconline/Entratel tab");
     await new Promise((r) => setTimeout(r, 2000));
 
-    await page.screenshot({ path: "/tmp/siampe-step1.png", fullPage: false }).catch(() => {});
-    logger.info({ url: page.url() }, "After SIAMPE navigation");
-
-    // The SIAMPE login page opens on the SPID tab — switch to Fisconline/Entratel.
-    // IMPORTANT: synthetic .click() doesn't trigger React event handlers on this SPA.
-    // We must use real mouse coordinates (page.mouse.click) so React updates the tab state.
-    logger.info("Clicking Fisconline/Entratel tab");
-    await new Promise((r) => setTimeout(r, 2000)); // let React fully initialize
-
-    // Get the element's center coordinates
     const tabCoords = await page.evaluate(`(function(){
       var els = Array.from(document.querySelectorAll('[role="tab"], button, li, a, span'));
       var tab = els.find(function(el){
@@ -270,7 +344,7 @@ export async function loginWithSiampe(
       `);
     }
 
-    // Wait for the tab content to switch (CF input must become visible)
+    // Wait for CF input to become visible (tab switch animation)
     let cfVisible = false;
     for (let i = 0; i < 10; i++) {
       await new Promise((r) => setTimeout(r, 500));
@@ -285,11 +359,9 @@ export async function loginWithSiampe(
       if (cfVisible) break;
     }
     logger.info({ cfVisible }, "After tab click — CF input visible");
-
     await page.screenshot({ path: "/tmp/siampe-step-tab.png", fullPage: false }).catch(() => {});
 
-    // Step 1: Fill codice fiscale — only match visible inputs (tab must be active)
-    logger.info("Waiting for visible codice fiscale input");
+    // Fill codice fiscale
     const cfSelector = await waitForVisibleInput(page, [
       'input[name="codiceFiscale"]',
       'input[id="codiceFiscale"]',
@@ -300,7 +372,7 @@ export async function loginWithSiampe(
     logger.info({ cfSelector }, "Filling codice fiscale");
     await clearAndType(page, cfSelector, credentials.codiceFiscale);
 
-    // Step 2: Fill password — the form has CF + Password + PIN all on ONE page
+    // Fill password
     logger.info("Filling password");
     const pwdSelector = await waitForVisibleInput(page, [
       'input[name="password"]',
@@ -309,33 +381,16 @@ export async function loginWithSiampe(
     ], 10000);
     await clearAndType(page, pwdSelector, credentials.password);
 
-    // Step 3: Fill PIN — same page, third field next to password
+    // Fill PIN (second password-type input, or placeholder-based selector)
     logger.info("Filling PIN");
-    // The SIAMPE Fisconline form shows Password and PIN side by side on the same page.
-    // We need the SECOND password-type input (PIN), or any input matching PIN label.
     const pinSelector = await waitForVisibleInput(page, [
       'input[placeholder*="PIN" i]',
       'input[placeholder*="pin" i]',
       'input[name*="pin" i]',
       'input[id*="pin" i]',
-    ], 5000).catch(async () => {
-      // Fallback: get the second visible input[type=password] (PIN is right of password)
-      const secondPwd = await page.evaluate(`(function(){
-        var inputs = Array.from(document.querySelectorAll('input[type="password"], input[type="text"]'));
-        var visible = inputs.filter(function(inp){
-          var r = inp.getBoundingClientRect();
-          return r.width > 0 && r.height > 0;
-        });
-        // Return selector for the second visible input (PIN comes after Password)
-        return visible.length >= 2 ? null : null;
-      })()`);
-      void secondPwd;
-      // Use evaluate-based fill for the second password input
-      return "__second_password__";
-    });
+    ], 5000).catch(() => "__second_password__");
 
     if (pinSelector === "__second_password__") {
-      // Fill PIN by targeting the second visible password-like input
       await page.evaluate(`(function(pin){
         var inputs = Array.from(document.querySelectorAll('input[type="password"], input[type="text"]'));
         var visible = inputs.filter(function(inp){
@@ -358,7 +413,7 @@ export async function loginWithSiampe(
 
     await page.screenshot({ path: "/tmp/siampe-step2-filled.png", fullPage: false }).catch(() => {});
 
-    // Step 4: Submit the Fisconline form (CF + password + PIN → single "Accedi" click)
+    // Submit
     logger.info("Submitting Fisconline form");
     await clickButton(page, [
       'button[type="submit"]',
@@ -372,333 +427,178 @@ export async function loginWithSiampe(
     const urlAfterSubmit = page.url();
     logger.info({ url: urlAfterSubmit }, "After form submit");
 
-    // Check for SIAMPE error messages immediately after submit (before waiting for redirect)
+    // Check for credential errors
     const pageText = await page.evaluate("document.body?.innerText || ''").catch(() => "") as string;
-    logger.info({ pageText: pageText.substring(0, 200) }, "Page text after submit");
+    logger.info({ pageText: pageText.substring(0, 300) }, "Page text after submit");
 
     const credErr =
       pageText.includes("Credenziali errate") ||
       pageText.includes("Autenticazione fallita") ||
       pageText.includes("credenziali non corrette") ||
-      pageText.includes("dati inseriti non sono corretti") ||
-      urlAfterSubmit.includes("www.agenziaentrate.gov.it/portale") ||
-      urlAfterSubmit.includes("/portale/web/guest");
+      pageText.includes("dati inseriti non sono corretti");
 
     if (credErr) {
       throw new Error("Credenziali non valide: codice fiscale, password o PIN errati");
     }
 
-    // Wait for redirect back to AE (success path)
-    logger.info("Waiting for redirect back to AE");
+    // ── Phase 3: wait for redirect after login ────────────────────────────────
+    // Best case: SIAMPE redirects back to ivaservizi (WAS session created).
+    // Fallback: SIAMPE redirects to portale (we then try to navigate to ivaservizi from there).
+    logger.info("Waiting for redirect after SIAMPE login");
     await page.waitForFunction(
       "window.location.hostname.includes('agenziaentrate.gov.it') && !window.location.hostname.includes('iampe')",
-      { timeout: 60000 },
+      { timeout: 90000 },
     );
 
-    await page.screenshot({ path: "/tmp/siampe-step5-after-login.png", fullPage: false }).catch(() => {});
-    logger.info({ url: page.url() }, "Landed on AE after login");
+    await page.screenshot({ path: "/tmp/after-login-redirect.png", fullPage: false }).catch(() => {});
+    const landedUrl = page.url();
+    logger.info({ url: landedUrl }, "Landed after SIAMPE login");
 
-    // Brief pause for portale home to initialize (cookies only — no need to render the SPA)
-    await new Promise((r) => setTimeout(r, 2000));
-    await page.screenshot({ path: "/tmp/portale-home.png", fullPage: false }).catch(() => {});
+    // Wait for any JS-driven redirect to settle
+    await new Promise((r) => setTimeout(r, 4000));
+    await page.screenshot({ path: "/tmp/after-login-settled.png", fullPage: false }).catch(() => {});
+    logger.info({ url: page.url() }, "URL after settlement pause");
 
-    // ── Intercept Set-Cookie headers from ivaservizi ─────────────────────────
-    page.on("response", (res) => {
-      const url = res.url();
-      if (url.includes("ivaservizi.agenziaentrate.gov.it")) {
-        const sc = res.headers()["set-cookie"];
-        const loc = res.headers()["location"] ?? "";
-        if (sc) logger.info({ url: url.substring(0, 120), setCookie: sc.substring(0, 400) }, "Set-Cookie from ivaservizi");
-        else logger.info({ url: url.substring(0, 120), status: res.status(), location: loc.substring(0, 120) }, "ivaservizi response");
-      }
-    });
+    // ── Phase 4: if we landed on portale (not ivaservizi), navigate to DCO ──
+    // After login from ivaservizi's nonauth link, SIAMPE *should* redirect to
+    // ivaservizi — but if it still goes to portale, we try to get there from portale.
+    const onIvaservizi = () =>
+      page.url().includes("ivaservizi.agenziaentrate.gov.it") && !page.url().includes("nonauth");
 
-    // ── Strategy: multi-step DCO session acquisition ─────────────────────────
-    //
-    // Goal: obtain FATSC / JSESSIONID from ivaservizi WAS.
-    // The WAS only creates the session when the request arrives via the portale
-    // SSO gateway — direct navigation to ivaservizi yields nonauth.html.
-    //
-    // Step 1 – portale home quick-links: the SPA may render DCO links directly
-    // Step 2 – portale Liferay scheda URL: the scheda page has a "Vai al servizio" button
-    // Step 3 – portale PortaleWeb/servizi: find and click the DCO card
-    // Step 4 – direct ivaservizi nav (last resort, may still work for some users)
+    if (!onIvaservizi()) {
+      logger.info({ url: page.url() }, "Landed on portale (not ivaservizi) — trying to navigate to DCO");
 
-    const IVA_DCO_URL = "https://ivaservizi.agenziaentrate.gov.it/ser/documenticommercialionline/";
+      // Try in-page fetch of the portale services API to find DCO redirect URL
+      // (called from within the browser so it has the right cookies + origin)
+      const serviceApiUrls = [
+        "/portale-rest/rs/servizi/listaServizi",
+        "/portale-rest/rs/servizi/listaServiziUtili",
+        "/portale/o/portale-rest/rs/servizi/listaServizi",
+      ];
 
-    /** Try to click any link/button that leads to DCO; returns href if found */
-    const findAndClickDCOLink = async (label: string): Promise<string | null> => {
-      const info = await page.evaluate(`(function() {
-        var keywords = ['documento commerciale', 'commerciale on line', 'scontrino', 'corrispettivi', 'dco', 'vai al servizio'];
-        // Collect all clickable elements
-        var candidates = Array.from(document.querySelectorAll('a[href], button'));
-        var found = null;
-        for (var i = 0; i < candidates.length; i++) {
-          var el = candidates[i];
-          var txt = (el.textContent || '').toLowerCase().trim();
-          var href = el.getAttribute('href') || '';
-          // Match by text
-          var textMatch = keywords.some(function(k){ return txt.includes(k); });
-          // Match by href pointing to ivaservizi or corrispettivi
-          var hrefMatch = href.includes('ivaservizi') || href.includes('corrispettiv') || href.includes('documenticommercial');
-          if (!textMatch && !hrefMatch) continue;
-          // Prefer links that point to ivaservizi directly
-          var r = el.getBoundingClientRect();
-          if (r.width === 0 || r.height === 0) continue;
-          found = { href: href, text: txt.substring(0, 80), x: Math.round(r.left + r.width/2), y: Math.round(r.top + r.height/2) };
-          if (hrefMatch) break; // ivaservizi link is best
-        }
-        return found;
-      })()`).catch(() => null) as { href: string; text: string; x: number; y: number } | null;
+      let dcoRedirectUrl: string | null = null;
 
-      logger.info({ label, found: info }, "DCO link search result");
-
-      if (!info) return null;
-
-      if (info.href && (info.href.startsWith("http") || info.href.startsWith("/"))) {
-        const absHref = info.href.startsWith("http") ? info.href : `https://portale.agenziaentrate.gov.it${info.href}`;
-        logger.info({ label, href: absHref }, "Navigating to DCO link href");
-        await page.goto(absHref, { waitUntil: "domcontentloaded", timeout: 30000 }).catch((e) => {
-          logger.warn({ err: String(e) }, "DCO link nav error");
-        });
-      } else {
-        logger.info({ label, x: info.x, y: info.y }, "Mouse-clicking DCO link");
-        await Promise.all([
-          page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 20000 }).catch(() => {}),
-          page.mouse.click(info.x, info.y),
-        ]);
-      }
-      return info.href;
-    };
-
-    /** Dump all links on current page for debugging */
-    const dumpPageLinks = async (tag: string) => {
-      const links = await page.evaluate(`(function(){
-        var els = Array.from(document.querySelectorAll('a[href], button'));
-        return els.slice(0, 40).map(function(el){
-          return { tag: el.tagName, txt: (el.textContent||'').trim().substring(0,60), href: el.getAttribute('href')||'' };
-        });
-      })()`).catch(() => []) as Array<{ tag: string; txt: string; href: string }>;
-      logger.info({ tag, url: page.url(), links }, "Page links dump");
-    };
-
-    let reachedIvaservizi = page.url().includes("ivaservizi.agenziaentrate.gov.it");
-
-    // ── Step 1: check portale HOME for DCO quick-links ────────────────────────
-    if (!reachedIvaservizi) {
-      logger.info("Step 1: scanning portale HOME for DCO links");
-      await page.screenshot({ path: "/tmp/portale-home.png", fullPage: false }).catch(() => {});
-      const homePageText = await page.evaluate("document.body?.innerText?.toLowerCase() || ''").catch(() => "") as string;
-      const hasDCOHint = homePageText.includes("documento") || homePageText.includes("corrispettivi") || homePageText.includes("scontrino");
-      logger.info({ hasDCOHint, url: page.url() }, "Portale home DCO hint");
-
-      if (hasDCOHint) {
-        await findAndClickDCOLink("portale-home");
-        await new Promise((r) => setTimeout(r, 3000));
-        reachedIvaservizi = page.url().includes("ivaservizi.agenziaentrate.gov.it") && !page.url().includes("nonauth");
-        logger.info({ reachedIvaservizi, url: page.url() }, "After portale home DCO click");
-      }
-    }
-
-    // ── Step 2: portale Liferay scheda page ───────────────────────────────────
-    if (!reachedIvaservizi) {
-      const PORTALE_SCHEDA_URL = "https://portale.agenziaentrate.gov.it/portale/web/guest/schede/comunicazioni/documenti-commerciali-online";
-      logger.info("Step 2: navigating to portale Liferay scheda DCO");
-      await page.goto(PORTALE_SCHEDA_URL, { waitUntil: "domcontentloaded", timeout: 30000 }).catch((e) => {
-        logger.warn({ err: String(e) }, "Scheda nav error");
-      });
-      await new Promise((r) => setTimeout(r, 5000)); // Liferay needs time to render
-      await page.screenshot({ path: "/tmp/portale-dco-scheda.png", fullPage: false }).catch(() => {});
-      logger.info({ url: page.url() }, "After scheda nav");
-      await dumpPageLinks("scheda");
-
-      reachedIvaservizi = page.url().includes("ivaservizi.agenziaentrate.gov.it") && !page.url().includes("nonauth");
-
-      if (!reachedIvaservizi) {
-        // Click "Vai al servizio" or any DCO link on the scheda page
-        await findAndClickDCOLink("portale-scheda");
-        await new Promise((r) => setTimeout(r, 4000));
-        await page.screenshot({ path: "/tmp/portale-scheda-after-click.png", fullPage: false }).catch(() => {});
-        reachedIvaservizi = page.url().includes("ivaservizi.agenziaentrate.gov.it") && !page.url().includes("nonauth");
-        logger.info({ reachedIvaservizi, url: page.url() }, "After scheda click");
-      }
-    }
-
-    // ── Step 3: portale PortaleWeb/servizi — capture listaServizi API ─────────
-    // The portale calls portale-rest/rs/servizi/listaServizi which returns a JSON
-    // array of ALL service cards including their portale redirect URLs.
-    // After enabling the IVA toggle, a second call includes DCO (Partita IVA services).
-    // We capture the full JSON, find DCO by keywords, and navigate to its URL.
-    if (!reachedIvaservizi) {
-      logger.info("Step 3: portale PortaleWeb/servizi — capturing listaServizi API");
-
-      // Collect ALL listaServizi/listaServiziUtili responses (including after toggle)
-      const capturedServiceLists: Array<{ url: string; body: string }> = [];
-
-      const serviceApiHandler = async (res: import("puppeteer").HTTPResponse) => {
-        const url = res.url();
-        if (!url.includes("listaServizi") && !url.includes("listaServiziUtili")) return;
+      for (const apiPath of serviceApiUrls) {
+        if (dcoRedirectUrl) break;
         try {
-          const body = await res.text().catch(() => "");
-          capturedServiceLists.push({ url, body });
-          logger.info({ url: url.substring(0, 120), bodyLen: body.length }, "Captured service list API");
-        } catch { /* ignore */ }
-      };
-      page.on("response", serviceApiHandler);
+          const result = await page.evaluate(async (path: string) => {
+            try {
+              const res = await fetch(path, {
+                headers: { "Accept": "application/json", "X-Requested-With": "XMLHttpRequest" },
+              });
+              if (!res.ok) return { error: res.status, body: null };
+              const body = await res.json();
+              return { error: null, body };
+            } catch (e) {
+              return { error: String(e), body: null };
+            }
+          }, apiPath) as { error: unknown; body: unknown };
 
-      await page.goto("https://portale.agenziaentrate.gov.it/PortaleWeb/servizi", {
-        waitUntil: "networkidle0", timeout: 25000,
-      }).catch(() => {});
-      await new Promise((r) => setTimeout(r, 2000));
-      await page.screenshot({ path: "/tmp/portale-servizi.png", fullPage: false }).catch(() => {});
+          logger.info({ apiPath, error: result.error, hasBody: !!result.body }, "In-page fetch listaServizi");
 
-      // Enable IVA toggle (triggers new listaServizi call with IVA-only services)
-      const toggleCoords = await page.evaluate(`(function(){
-        var els = Array.from(document.querySelectorAll('label, span, div'));
-        for (var i = 0; i < els.length; i++) {
-          var t = (els[i].textContent||'').toLowerCase();
-          if (!t.includes('partita iva') || t.length > 200) continue;
-          var inp = els[i].querySelector('input[type="checkbox"]') || document.querySelector('input[type="checkbox"]');
-          if (inp && !inp.checked) {
-            var tgt = els[i].closest('label') || els[i];
-            var r = tgt.getBoundingClientRect();
-            if (r.width > 0) return { x: Math.round(r.left+r.width/2), y: Math.round(r.top+r.height/2) };
+          if (result.body) {
+            // Log raw structure for debugging
+            const bodyStr = JSON.stringify(result.body).substring(0, 1000);
+            logger.info({ apiPath, bodyStr }, "listaServizi raw response");
+
+            const parsed = result.body as unknown;
+            const services = (
+              (parsed as { listaServizi?: unknown[] })?.listaServizi ??
+              (parsed as { listaServiziUtili?: unknown[] })?.listaServiziUtili ??
+              (Array.isArray(parsed) ? parsed : [])
+            ) as Array<{ codice?: string; descrizione?: string; url?: string; urlServizio?: string }>;
+
+            logger.info({ count: services.length }, "listaServizi parsed count");
+
+            const dcoKeywords = ["documento commerciale", "commerciale on line", "scontrino", "corrispettiv", "documenti commercial"];
+
+            for (const svc of services) {
+              const desc = (svc.descrizione ?? "").toLowerCase();
+              logger.info({ codice: svc.codice, descrizione: svc.descrizione, url: svc.url ?? svc.urlServizio }, "Service entry");
+              if (!dcoRedirectUrl && dcoKeywords.some((kw) => desc.includes(kw))) {
+                dcoRedirectUrl = svc.url ?? svc.urlServizio ?? null;
+                logger.info({ dcoRedirectUrl, descrizione: svc.descrizione }, "Found DCO service!");
+              }
+            }
           }
-        }
-        return null;
-      })()`).catch(() => null) as { x: number; y: number } | null;
-
-      if (toggleCoords) {
-        await page.mouse.click(toggleCoords.x, toggleCoords.y);
-        await new Promise((r) => setTimeout(r, 5000)); // wait for reload + new API call
-        logger.info("IVA toggle clicked, waiting for listaServizi reload");
-      }
-
-      // Parse all captured service lists and find DCO entry
-      const dcoKeywords = ["documento commerciale", "commerciale on line", "scontrino", "corrispettiv", "documenti commercial"];
-      let dcoServiceUrl: string | null = null;
-      let dcoServiceDesc: string | null = null;
-
-      for (const { url: apiUrl, body } of capturedServiceLists) {
-        let parsed: unknown;
-        try { parsed = JSON.parse(body); } catch { continue; }
-
-        // The response is { listaServizi: [...] } or similar
-        const services = (
-          (parsed as { listaServizi?: unknown[] })?.listaServizi ??
-          (Array.isArray(parsed) ? parsed : [])
-        ) as Array<{ codice?: string; descrizione?: string; url?: string }>;
-
-        logger.info({ apiUrl: apiUrl.substring(0, 80), count: services.length }, "Parsed service list");
-
-        // Log all services for debugging
-        for (const svc of services) {
-          if (svc.descrizione) {
-            logger.info({ codice: svc.codice, descrizione: svc.descrizione, url: svc.url }, "Service entry");
-          }
-        }
-
-        const dcoEntry = services.find((svc) => {
-          const desc = (svc.descrizione ?? "").toLowerCase();
-          return dcoKeywords.some((kw) => desc.includes(kw));
-        });
-
-        if (dcoEntry?.url) {
-          dcoServiceUrl = dcoEntry.url;
-          dcoServiceDesc = dcoEntry.descrizione ?? null;
-          logger.info({ dcoServiceUrl, dcoServiceDesc, codice: dcoEntry.codice }, "Found DCO service in API!");
-          break;
+        } catch (err) {
+          logger.warn({ apiPath, err: String(err) }, "In-page fetch error");
         }
       }
 
-      if (dcoServiceUrl) {
-        // Build absolute URL (portale URLs are relative like /PortaleWeb/servizi/...)
-        const absUrl = dcoServiceUrl.startsWith("http")
-          ? dcoServiceUrl
-          : `https://portale.agenziaentrate.gov.it${dcoServiceUrl}`;
-        logger.info({ absUrl, dcoServiceDesc }, "Navigating to DCO portale service URL");
+      if (dcoRedirectUrl) {
+        const absUrl = dcoRedirectUrl.startsWith("http")
+          ? dcoRedirectUrl
+          : `https://portale.agenziaentrate.gov.it${dcoRedirectUrl}`;
+        logger.info({ absUrl }, "Navigating to DCO portale redirect URL");
         await page.goto(absUrl, { waitUntil: "domcontentloaded", timeout: 30000 }).catch((e) => {
-          logger.warn({ err: String(e) }, "DCO service URL nav error");
+          logger.warn({ err: String(e) }, "DCO redirect nav error");
         });
         await new Promise((r) => setTimeout(r, 5000));
-        await page.screenshot({ path: "/tmp/portale-dco-service.png", fullPage: false }).catch(() => {});
-        logger.info({ url: page.url() }, "After DCO service URL nav");
-        reachedIvaservizi = page.url().includes("ivaservizi.agenziaentrate.gov.it") && !page.url().includes("nonauth");
-      } else {
-        // DCO not found in API — log all service descriptions for manual inspection
-        logger.warn({ capturedLists: capturedServiceLists.length }, "DCO not found in listaServizi — falling back to DOM click");
-        await dumpPageLinks("servizi-after-toggle");
-        // Try clicking any DCO-related link by DOM
-        const clicked = await findAndClickDCOLink("portale-servizi-dom");
-        if (clicked !== null) {
-          await new Promise((r) => setTimeout(r, 3000));
-          reachedIvaservizi = page.url().includes("ivaservizi.agenziaentrate.gov.it") && !page.url().includes("nonauth");
-        }
+        await page.screenshot({ path: "/tmp/portale-dco-redirect.png", fullPage: false }).catch(() => {});
+        logger.info({ url: page.url(), onIvaservizi: onIvaservizi() }, "After DCO portale redirect");
       }
 
-      await page.screenshot({ path: "/tmp/portale-servizi-result.png", fullPage: false }).catch(() => {});
-      logger.info({ reachedIvaservizi, url: page.url() }, "After portale servizi step");
+      // If still not on ivaservizi, try direct nav (last resort — may yield nonauth but we collect all cookies)
+      if (!onIvaservizi()) {
+        logger.info("Direct ivaservizi nav (last resort)");
+        await page.goto(DCO_URL, { waitUntil: "domcontentloaded", timeout: 30000 }).catch(() => {});
+        await new Promise((r) => setTimeout(r, 4000));
+        await page.screenshot({ path: "/tmp/ivaservizi-last-resort.png", fullPage: false }).catch(() => {});
+        logger.info({ url: page.url() }, "After last-resort ivaservizi nav");
+      }
     }
 
-    // ── Step 4: direct ivaservizi nav (last resort) ───────────────────────────
-    if (!reachedIvaservizi) {
-      logger.info("Step 4: direct ivaservizi nav (last resort — may yield nonauth)");
-      await page.goto(IVA_DCO_URL, { waitUntil: "domcontentloaded", timeout: 30000 }).catch((e) => {
-        logger.warn({ err: String(e) }, "Direct ivaservizi nav error");
-      });
-      await new Promise((r) => setTimeout(r, 4000));
-      await page.screenshot({ path: "/tmp/ivaservizi-direct.png", fullPage: false }).catch(() => {});
-      logger.info({ url: page.url() }, "After direct ivaservizi nav");
-    }
-
+    // ── Phase 5: collect all cookies ─────────────────────────────────────────
     const finalUrl = page.url();
-    // Collect cookies from all relevant domains after final navigation
     const finalCookiesPortale = await page.cookies("https://portale.agenziaentrate.gov.it").catch(() => []);
-    const finalCookiesIva    = await page.cookies("https://ivaservizi.agenziaentrate.gov.it").catch(() => []);
-    const finalCookiesAe     = await page.cookies("https://www.agenziaentrate.gov.it").catch(() => []);
-    const allCookiesAfter = [...finalCookiesPortale, ...finalCookiesIva, ...finalCookiesAe];
-    const hasFinalSession = allCookiesAfter.some((c) => c.name === "FATSC" || c.name === "JSESSIONID" || c.name === "B2BCookie");
+    const finalCookiesIva     = await page.cookies("https://ivaservizi.agenziaentrate.gov.it").catch(() => []);
+    const finalCookiesAe      = await page.cookies("https://www.agenziaentrate.gov.it").catch(() => []);
+    const currentCookies      = await page.cookies().catch(() => []);
+    const allCookies = [...finalCookiesPortale, ...finalCookiesIva, ...finalCookiesAe, ...currentCookies];
+
+    const hasFATSC = allCookies.some((c) => c.name === "FATSC");
+    const hasJSESSIONID = allCookies.some((c) => c.name === "JSESSIONID");
     logger.info(
-      { url: finalUrl, hasFinalSession, onIvaservizi: finalUrl.includes("ivaservizi") && !finalUrl.includes("nonauth") },
-      "Final URL after DCO navigation",
+      {
+        url: finalUrl,
+        onIvaservizi: onIvaservizi(),
+        hasFATSC,
+        hasJSESSIONID,
+        cookieNames: [...new Set(allCookies.map((c) => c.name))],
+      },
+      "Final cookie state",
     );
     await page.screenshot({ path: "/tmp/dco-final.png", fullPage: false }).catch(() => {});
 
-    // Build cookie header merging all domains (dedup by name — last wins)
+    // Build cookie header (dedup by name — last wins)
     const cookieMap = new Map<string, string>();
-    for (const c of allCookiesAfter) {
-      cookieMap.set(c.name, c.value);
-    }
-    // Also add any cookies captured during page navigation for the current URL
-    const currentPageCookies = await page.cookies().catch(() => []);
-    for (const c of currentPageCookies) {
+    for (const c of allCookies) {
       if (c.domain.includes("agenziaentrate.gov.it")) cookieMap.set(c.name, c.value);
     }
+
     logger.info(
       { count: cookieMap.size, names: Array.from(cookieMap.keys()) },
       "All cookies collected (merged domains)",
     );
 
-    const siampeCookieHeader = Array.from(cookieMap.entries())
+    const finalCookieHeader = Array.from(cookieMap.entries())
       .map(([k, v]) => `${k}=${v}`)
       .join("; ");
-
-    // Additionally try Node.js fetch SSO chain to pick up any remaining
-    // ivaservizi-specific session cookies not available in Puppeteer
-    const enrichedCookies = await followPortaleSSOToIvaservizi(siampeCookieHeader);
-
-    // Merge: Node.js fetch cookies take precedence for ivaservizi cookies
-    const finalCookieHeader = enrichedCookies || siampeCookieHeader;
 
     if (!finalCookieHeader) {
       throw new Error("Could not extract session cookies after login");
     }
 
-    const ragioneSociale = await page.evaluate(
-      "document.querySelector('.utente, .user-info, [class*=\"utente\"], [class*=\"user\"]')?.textContent?.trim() || ''",
-    ).catch(() => "") as string;
+    const ragioneSociale = await page.evaluate(`(function(){
+      var el = document.querySelector('.utente, .user-info, [class*="utente"], [class*="user"], .nome-utente, #nome-utente');
+      return el ? el.textContent.trim() : '';
+    })()`).catch(() => "") as string;
 
-    logger.info({ ragioneSociale, cookieLen: finalCookieHeader.length, cookieCount: Object.keys(parseCookieHeader(finalCookieHeader)).length }, "SIAMPE login successful");
+    logger.info(
+      { ragioneSociale, cookieLen: finalCookieHeader.length, hasFATSC, hasJSESSIONID },
+      "SIAMPE login successful",
+    );
 
     return {
       cookieHeader: finalCookieHeader,

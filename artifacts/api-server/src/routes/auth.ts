@@ -157,6 +157,44 @@ router.get("/auth/status", async (req, res): Promise<void> => {
   res.json(result);
 });
 
+// ── POST /auth/cookie — manual cookie paste (bypasses Puppeteer SSO) ─────────
+// The user logs in on their real browser, copies cookie header from DevTools,
+// and pastes it here. We store it directly in the session without Puppeteer.
+router.post("/auth/cookie", async (req, res): Promise<void> => {
+  const { cookieHeader, codiceFiscale } = req.body as {
+    cookieHeader?: string;
+    codiceFiscale?: string;
+  };
+
+  if (!cookieHeader || typeof cookieHeader !== "string" || cookieHeader.trim().length < 20) {
+    res.status(400).json({ error: "Stringa cookie non valida o troppo corta" });
+    return;
+  }
+
+  if (!codiceFiscale || typeof codiceFiscale !== "string") {
+    res.status(400).json({ error: "Codice fiscale mancante" });
+    return;
+  }
+
+  setSession({
+    cookies: cookieHeader.trim(),
+    ragioneSociale: "",
+    partitaIva: codiceFiscale.toUpperCase(),
+    codiceFiscale: codiceFiscale.toUpperCase(),
+    indirizzo: "",
+    numeroCivico: "",
+    cap: "",
+    comune: "",
+    provincia: "",
+    defAliquotaIVA: "22",
+    credentials: { codiceFiscale: codiceFiscale.toUpperCase(), password: "", pin: "" },
+    createdAt: new Date(),
+  });
+
+  req.log.info({ codiceFiscale, cookieLen: cookieHeader.length }, "Manual cookie session created");
+  res.json({ success: true });
+});
+
 // ── POST /auth/logout ─────────────────────────────────────────────────────────
 router.post("/auth/logout", async (req, res): Promise<void> => {
   clearSession();

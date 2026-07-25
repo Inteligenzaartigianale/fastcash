@@ -502,8 +502,24 @@ export async function loginWithSiampe(
     if (!onIvaservizi()) {
       logger.info({ url: page.url() }, "Landed on portale (not ivaservizi) — trying to navigate to DCO");
 
-      // Try in-page fetch of the portale services API to find DCO redirect URL
-      // (called from within the browser so it has the right cookies + origin)
+      // Extract Liferay authToken from the page — needed for portale-rest CSRF protection.
+      // Liferay embeds this token as window.Liferay.authToken on every portale page.
+      // Without it, portale-rest returns 409 Conflict.
+      const liferayAuthToken = await page.evaluate(`(function(){
+        try {
+          if (window.Liferay && window.Liferay.authToken) return window.Liferay.authToken;
+          // Also try Liferay2 or global themeDisplay
+          if (window.themeDisplay && window.themeDisplay.getAuthToken) return window.themeDisplay.getAuthToken();
+        } catch(e) {}
+        return null;
+      })()`) as string | null;
+      logger.info({ liferayAuthToken }, "Liferay authToken extraction");
+
+      // Also dump full portale home HTML to find any direct DCO links
+      const portaleHtml = await page.evaluate("document.body?.innerHTML?.substring(0, 5000) || ''").catch(() => "") as string;
+      logger.info({ portaleHtml }, "Portale home HTML (first 5000 chars)");
+
+      // Try in-page fetch of the portale services API — with p_auth token if available
       const serviceApiUrls = [
         "/portale-rest/rs/servizi/listaServizi",
         "/portale-rest/rs/servizi/listaServiziUtili",
@@ -515,10 +531,15 @@ export async function loginWithSiampe(
       for (const apiPath of serviceApiUrls) {
         if (dcoRedirectUrl) break;
         try {
-          const result = await page.evaluate(async (path: string) => {
+          const result = await page.evaluate(async (path: string, pAuth: string | null) => {
             try {
-              const res = await fetch(path, {
-                headers: { "Accept": "application/json", "X-Requested-With": "XMLHttpRequest" },
+              const url = pAuth ? `${path}?p_auth=${encodeURIComponent(pAuth)}` : path;
+              const res = await fetch(url, {
+                headers: {
+                  "Accept": "application/json",
+                  "X-Requested-With": "XMLHttpRequest",
+                  ...(pAuth ? { "p_auth": pAuth } : {}),
+                },
               });
               if (!res.ok) return { error: res.status, body: null };
               const body = await res.json();
@@ -526,13 +547,12 @@ export async function loginWithSiampe(
             } catch (e) {
               return { error: String(e), body: null };
             }
-          }, apiPath) as { error: unknown; body: unknown };
+          }, apiPath, liferayAuthToken) as { error: unknown; body: unknown };
 
           logger.info({ apiPath, error: result.error, hasBody: !!result.body }, "In-page fetch listaServizi");
 
           if (result.body) {
-            // Log raw structure for debugging
-            const bodyStr = JSON.stringify(result.body).substring(0, 1000);
+            const bodyStr = JSON.stringify(result.body).substring(0, 2000);
             logger.info({ apiPath, bodyStr }, "listaServizi raw response");
 
             const parsed = result.body as unknown;

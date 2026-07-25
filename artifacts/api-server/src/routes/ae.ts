@@ -387,7 +387,7 @@ function buildDcw10Payload(
   const vendita = [
     { tipo: "PC", importo: fmt2(pag.contanti ?? 0) },
     { tipo: "PE", importo: fmt2(pag.elettronico ?? 0) },
-    { tipo: "TR", importo: fmt2(pag.ticketRestaurant ?? 0), numero: String(Math.round(parseFloat(pag.numeroTicket ?? "0"))) },
+    { tipo: "TR", importo: fmt2(pag.ticketRestaurant ?? 0), numero: String(Math.round(parseFloat(pag.numeroTicket || "0") || 0)) },
     { tipo: "NR_EF", importo: fmt2(nrEf) },
     { tipo: "NR_PS", importo: fmt2(nrPs) },
     { tipo: "NR_CS", importo: fmt2(nrCs) },

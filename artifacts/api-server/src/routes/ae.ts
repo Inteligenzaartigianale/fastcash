@@ -97,53 +97,69 @@ router.get("/ae/me", async (req, res): Promise<void> => {
   }
 
   const ts = Date.now();
-  const result = await aeGet(`${AE_COMMON}/info/me?v=${ts}`, cookies);
 
-  if (!result.ok) {
-    req.log.warn({ status: result.status, data: result.data, cookieLen: cookies.length }, "AE /me returned error");
-    res.status(result.status).json({ error: "Errore AE", details: JSON.stringify(result.data) });
+  // Call both endpoints in parallel: /me (identity) and /dati/fiscali (address)
+  const [meResult, fiscaliResult] = await Promise.all([
+    aeGet(`${AE_COMMON}/info/me?v=${ts}`, cookies),
+    aeGet(`${AE_API}/doc/documenti/dati/fiscali?v=${ts}`, cookies),
+  ]);
+
+  if (!meResult.ok) {
+    req.log.warn({ status: meResult.status, data: meResult.data, cookieLen: cookies.length }, "AE /me returned error");
+    res.status(meResult.status).json({ error: "Errore AE", details: JSON.stringify(meResult.data) });
     return;
   }
 
   // AE /me response structure:
   // { info: { utenteAutenticato: { nome, cognome, cf, tipo },
   //            utenzaLavoro:      { cf, piva, denominazione, tipo } }, links: [...] }
-  const raw = result.data as Record<string, unknown>;
+  const raw = meResult.data as Record<string, unknown>;
   const info = (raw.info ?? {}) as Record<string, Record<string, string>>;
   const utente = (info.utenteAutenticato ?? {}) as Record<string, string>;
   const lavoro  = (info.utenzaLavoro ?? {}) as Record<string, string>;
 
   const ragioneSociale = lavoro.denominazione ?? "";
   const partitaIva     = lavoro.piva ?? lavoro.cf ?? "";
-  // For the document emitter we use the lavoro CF (business entity);
-  // the personal CF is kept separately for audit purposes.
   const codiceFiscale  = lavoro.cf ?? utente.cf ?? "";
+
+  // AE /dati/fiscali response:
+  // { altriDatiIdentificativi: { indirizzo, cap, comune, provincia, defAliquotaIVA, ... } }
+  const fiscali = fiscaliResult.ok
+    ? ((fiscaliResult.data as Record<string, unknown>)?.altriDatiIdentificativi ?? {}) as Record<string, string>
+    : {} as Record<string, string>;
 
   const session = getSession();
 
-  // Persist to session so buildDcw10Payload can use it later
+  // Persist everything to session so buildDcw10Payload can use it
   if (session) {
     setSession({
       ...session,
       ragioneSociale: ragioneSociale || session.ragioneSociale,
       partitaIva:     partitaIva     || session.partitaIva,
       codiceFiscale:  codiceFiscale  || session.codiceFiscale,
+      indirizzo:      fiscali.indirizzo   || session.indirizzo,
+      numeroCivico:   fiscali.numeroCivico ?? session.numeroCivico,
+      cap:            fiscali.cap         || session.cap,
+      comune:         fiscali.comune      || session.comune,
+      provincia:      fiscali.provincia   || session.provincia,
+      defAliquotaIVA: fiscali.defAliquotaIVA || session.defAliquotaIVA,
     });
   }
 
-  req.log.info({ ragioneSociale, partitaIva, codiceFiscale, utenteCf: utente.cf }, "AE /me mapped");
+  req.log.info({ ragioneSociale, partitaIva, codiceFiscale, indirizzo: fiscali.indirizzo, cap: fiscali.cap }, "AE /me+fiscali mapped");
 
-  const meResult = GetMeResponse.parse({
-    ragioneSociale: ragioneSociale || session?.ragioneSociale || "",
-    partitaIva:     partitaIva     || session?.partitaIva     || "",
-    codiceFiscale:  codiceFiscale  || session?.codiceFiscale  || "",
-    indirizzo: session?.indirizzo  || "",
-    comune:    session?.comune     || "",
-    cap:       session?.cap        || "",
-    provincia: session?.provincia  || "",
+  const finalSession = getSession();
+  const parsed = GetMeResponse.parse({
+    ragioneSociale: ragioneSociale || finalSession?.ragioneSociale || "",
+    partitaIva:     partitaIva     || finalSession?.partitaIva     || "",
+    codiceFiscale:  codiceFiscale  || finalSession?.codiceFiscale  || "",
+    indirizzo: finalSession?.indirizzo || "",
+    comune:    finalSession?.comune    || "",
+    cap:       finalSession?.cap       || "",
+    provincia: finalSession?.provincia || "",
   });
 
-  res.json(meResult);
+  res.json(parsed);
 });
 
 // POST /ae/documenti

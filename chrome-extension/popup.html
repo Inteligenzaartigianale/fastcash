@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Scontrini Fiscali</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      width: 300px;
+      background: #f8fafc;
+      color: #1e293b;
+    }
+    .header {
+      background: #1e3a5f;
+      color: white;
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .header svg { flex-shrink: 0; }
+    .header-text h1 { font-size: 14px; font-weight: 600; }
+    .header-text p { font-size: 11px; opacity: 0.75; margin-top: 1px; }
+    .body { padding: 16px; }
+    .status-box {
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 14px;
+      font-size: 12px;
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+    }
+    .status-box.info { background: #eff6ff; border: 1px solid #bfdbfe; color: #1d4ed8; }
+    .status-box.success { background: #f0fdf4; border: 1px solid #bbf7d0; color: #15803d; }
+    .status-box.error { background: #fef2f2; border: 1px solid #fecaca; color: #dc2626; }
+    .status-box.warning { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
+    .status-icon { font-size: 14px; flex-shrink: 0; line-height: 1; }
+    .status-text { line-height: 1.4; }
+
+    .btn {
+      width: 100%;
+      padding: 10px 16px;
+      border: none;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: opacity .15s;
+    }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-primary { background: #1e3a5f; color: white; }
+    .btn-primary:hover:not(:disabled) { background: #1e40af; }
+
+    .divider { border: none; border-top: 1px solid #e2e8f0; margin: 14px 0; }
+
+    label { display: block; font-size: 11px; font-weight: 600; color: #64748b; margin-bottom: 4px; }
+    input {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      font-size: 12px;
+      color: #1e293b;
+      background: white;
+      margin-bottom: 10px;
+    }
+    input:focus { outline: none; border-color: #1e3a5f; }
+
+    .save-btn {
+      font-size: 11px;
+      padding: 6px 12px;
+      border-radius: 6px;
+      border: 1px solid #cbd5e1;
+      background: white;
+      color: #64748b;
+      cursor: pointer;
+      font-weight: 500;
+    }
+    .save-btn:hover { background: #f1f5f9; }
+
+    .cookie-count { font-size: 10px; color: #94a3b8; margin-top: 8px; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+      <polyline points="14,2 14,8 20,8"/>
+      <line x1="16" y1="13" x2="8" y2="13"/>
+      <line x1="16" y1="17" x2="8" y2="17"/>
+      <polyline points="10,9 9,9 8,9"/>
+    </svg>
+    <div class="header-text">
+      <h1>Scontrini Fiscali</h1>
+      <p>Connessione automatica</p>
+    </div>
+  </div>
+
+  <div class="body">
+    <div id="status" class="status-box info">
+      <span class="status-icon">ℹ️</span>
+      <span class="status-text">Pronto. Assicurati di essere loggato su ivaservizi prima di connettere.</span>
+    </div>
+
+    <button id="connectBtn" class="btn btn-primary">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+        <polyline points="15,3 21,3 21,9"/>
+        <line x1="10" y1="14" x2="21" y2="3"/>
+      </svg>
+      Connetti all'app
+    </button>
+
+    <p id="cookieCount" class="cookie-count"></p>
+
+    <hr class="divider">
+
+    <label for="appUrl">URL dell'app</label>
+    <input type="text" id="appUrl" placeholder="https://tua-app.replit.app" />
+    <button class="save-btn" id="saveBtn">Salva URL</button>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

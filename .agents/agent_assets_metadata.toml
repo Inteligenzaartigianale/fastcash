@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "FzfexWRuW-TYzkoGrhVaL"
+uri = "file://scontrini-extension.zip"
+type = "unspecified"
+title = "Estensione Chrome – Scontrini Fiscali"

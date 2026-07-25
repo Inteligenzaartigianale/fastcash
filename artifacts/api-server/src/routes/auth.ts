@@ -171,16 +171,14 @@ router.post("/auth/cookie", async (req, res): Promise<void> => {
     return;
   }
 
-  if (!codiceFiscale || typeof codiceFiscale !== "string") {
-    res.status(400).json({ error: "Codice fiscale mancante" });
-    return;
-  }
+  // CF is optional — /ae/me will populate it on first load
+  const cf = (codiceFiscale ?? "").toUpperCase();
 
   setSession({
     cookies: cookieHeader.trim(),
     ragioneSociale: "",
-    partitaIva: codiceFiscale.toUpperCase(),
-    codiceFiscale: codiceFiscale.toUpperCase(),
+    partitaIva: cf,
+    codiceFiscale: cf,
     indirizzo: "",
     numeroCivico: "",
     cap: "",

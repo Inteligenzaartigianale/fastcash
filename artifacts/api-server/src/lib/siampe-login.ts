@@ -244,66 +244,100 @@ export async function loginWithSiampe(
       }
     });
 
-    // ── Phase 1: navigate to ivaservizi → nonauth.html → extract login link ──
-    logger.info({ url: DCO_URL }, "Navigating to ivaservizi DCO URL to get nonauth login link");
+    // ── Phase 1: navigate to ivaservizi → nonauth.html → capture login URL ──
+    // The Angular SPA redirects to nonauth.html when unauthenticated.
+    // The login button on nonauth.html uses Angular click handlers (not plain href),
+    // so we use request interception to capture the SIAMPE URL it navigates to.
+
+    logger.info({ url: DCO_URL }, "Navigating to ivaservizi DCO URL");
     await page.goto(DCO_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
-    // Angular SPA needs a few seconds to bootstrap and redirect to nonauth.html
-    await new Promise((r) => setTimeout(r, 5000));
+    // Angular SPA needs time to bootstrap, call auth APIs, and redirect to nonauth.html
+    await new Promise((r) => setTimeout(r, 6000));
     await page.screenshot({ path: "/tmp/nonauth-before-login.png", fullPage: false }).catch(() => {});
     logger.info({ url: page.url() }, "After initial ivaservizi nav");
 
-    // Extract all links from the nonauth page for debugging + login link search
-    const pageLinks = await page.evaluate(`(function(){
-      return Array.from(document.querySelectorAll('a[href], button, [onclick]')).map(function(el){
-        return {
-          tag: el.tagName,
-          txt: (el.textContent||'').trim().substring(0,80),
-          href: el.getAttribute('href') || '',
-          onclick: (el.getAttribute('onclick')||'').substring(0,120)
-        };
-      });
-    })()`) as Array<{ tag: string; txt: string; href: string; onclick: string }>;
-    logger.info({ url: page.url(), count: pageLinks.length, links: pageLinks.slice(0, 30) }, "nonauth page links");
+    // Dump full HTML to understand nonauth page structure
+    const nonAuthHtml = await page.evaluate("document.body?.innerHTML?.substring(0, 4000) || ''").catch(() => "") as string;
+    logger.info({ html: nonAuthHtml }, "nonauth.html body HTML");
 
-    // Also try extracting the login URL from the Angular app's JavaScript config
-    // (Some SPAs embed the SIAMPE URL as a JS constant rather than a DOM link)
+    // Extract Angular config objects that may contain the login URL
     const jsLoginUrl = await page.evaluate(`(function(){
-      // Check if Angular has populated window.__env or similar config objects
-      var env = window.__env || window.env || window.APP_CONFIG || {};
-      var keys = ['loginUrl', 'authUrl', 'siampeUrl', 'login_url'];
-      for (var i = 0; i < keys.length; i++) {
-        if (env[keys[i]]) return env[keys[i]];
+      var keys = ['loginUrl', 'authUrl', 'siampeUrl', 'login_url', 'loginPath', 'iampeUrl'];
+      var targets = [window.__env, window.env, window.APP_CONFIG, window.appConfig, window.DCO_CONFIG];
+      for (var t of targets) {
+        if (!t || typeof t !== 'object') continue;
+        for (var k of keys) {
+          if (t[k]) return t[k];
+        }
+      }
+      // Also check document-level data attributes
+      var body = document.body;
+      if (body) {
+        for (var k of keys) {
+          var val = body.dataset[k];
+          if (val) return val;
+        }
       }
       return null;
     })()`) as string | null;
     logger.info({ jsLoginUrl }, "Angular JS login URL extraction");
 
-    // Find the login link: prefer links with 'iampe' or 'Login' in href, or login-related text
-    const loginHref = await page.evaluate(`(function(){
-      var links = Array.from(document.querySelectorAll('a[href]'));
-      // Priority 1: link directly to SIAMPE (iampe.agenziaentrate.gov.it)
-      for (var i = 0; i < links.length; i++) {
-        if (links[i].href.includes('iampe') || links[i].href.includes('Login')) {
-          return links[i].href;
+    // Set up request interception to capture the SIAMPE URL when login button is clicked
+    let capturedLoginUrl: string | null = null;
+    await page.setRequestInterception(true);
+    const reqHandler = (req: import("puppeteer").HTTPRequest) => {
+      const url = req.url();
+      if (url.includes("iampe") || (url.includes("Login") && url.includes("agenziaentrate"))) {
+        capturedLoginUrl = url;
+        logger.info({ capturedLoginUrl }, "Intercepted login navigation");
+        req.abort("aborted").catch(() => {});
+      } else {
+        req.continue().catch(() => {});
+      }
+    };
+    page.on("request", reqHandler);
+
+    // Try to click any element with login-related text (broad search — not just <a>/<button>)
+    const clickResult = await page.evaluate(`(function(){
+      var keywords = ['accedi', 'login', 'entra', 'autenticati', 'accesso'];
+      var all = Array.from(document.querySelectorAll('*'));
+      for (var i = 0; i < all.length; i++) {
+        var el = all[i];
+        // Skip elements that contain child elements (avoid clicking containers)
+        if (el.children.length > 3) continue;
+        var txt = (el.textContent || '').trim().toLowerCase();
+        if (keywords.some(function(k){ return txt === k; })) {
+          el.click();
+          return { tag: el.tagName, txt: txt, className: el.className };
         }
       }
-      // Priority 2: any link with login-related text
-      var loginTexts = ['accedi', 'login', 'entra', 'autent'];
-      for (var j = 0; j < links.length; j++) {
-        var txt = (links[j].textContent||'').toLowerCase();
-        if (loginTexts.some(function(k){ return txt.includes(k); })) {
-          return links[j].href;
+      // Second pass: partial match
+      for (var j = 0; j < all.length; j++) {
+        var el2 = all[j];
+        if (el2.children.length > 3) continue;
+        var txt2 = (el2.textContent || '').trim().toLowerCase();
+        if (keywords.some(function(k){ return txt2.startsWith(k); })) {
+          el2.click();
+          return { tag: el2.tagName, txt: txt2, className: el2.className };
         }
       }
       return null;
-    })()`) as string | null;
+    })()`) as { tag: string; txt: string; className: string } | null;
+    logger.info({ clickResult }, "Login button click result");
 
-    logger.info({ loginHref, jsLoginUrl }, "Extracted login link from nonauth");
+    // Wait for the request interception to fire
+    await new Promise((r) => setTimeout(r, 3000));
 
-    // Build the SIAMPE URL to navigate to — prefer the one extracted from the page
-    let siampeUrl = loginHref || jsLoginUrl || SIAMPE_LOGIN_URL_FALLBACK;
+    // Clean up request interception
+    page.off("request", reqHandler);
+    await page.setRequestInterception(false).catch(() => {});
 
-    // If the link is a relative path on ivaservizi, make it absolute
+    logger.info({ capturedLoginUrl, jsLoginUrl }, "Login URL capture summary");
+
+    // Build the SIAMPE URL — prefer intercepted (exact), then JS config, then fallback
+    let siampeUrl = capturedLoginUrl || jsLoginUrl || SIAMPE_LOGIN_URL_FALLBACK;
+
+    // If relative, make absolute
     if (siampeUrl && siampeUrl.startsWith("/")) {
       siampeUrl = `https://ivaservizi.agenziaentrate.gov.it${siampeUrl}`;
     }

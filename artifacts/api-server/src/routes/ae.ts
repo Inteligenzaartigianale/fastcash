@@ -105,35 +105,42 @@ router.get("/ae/me", async (req, res): Promise<void> => {
     return;
   }
 
-  // Map AE response to our schema
-  const aeData = result.data as Record<string, unknown>;
+  // AE /me response structure:
+  // { info: { utenteAutenticato: { nome, cognome, cf, tipo },
+  //            utenzaLavoro:      { cf, piva, denominazione, tipo } }, links: [...] }
+  const raw = result.data as Record<string, unknown>;
+  const info = (raw.info ?? {}) as Record<string, Record<string, string>>;
+  const utente = (info.utenteAutenticato ?? {}) as Record<string, string>;
+  const lavoro  = (info.utenzaLavoro ?? {}) as Record<string, string>;
+
+  const ragioneSociale = lavoro.denominazione ?? "";
+  const partitaIva     = lavoro.piva ?? lavoro.cf ?? "";
+  // For the document emitter we use the lavoro CF (business entity);
+  // the personal CF is kept separately for audit purposes.
+  const codiceFiscale  = lavoro.cf ?? utente.cf ?? "";
+
   const session = getSession();
 
-  // Persist address data to session so buildDcw10Payload can use it
-  if (session && aeData) {
-    const updated = {
+  // Persist to session so buildDcw10Payload can use it later
+  if (session) {
+    setSession({
       ...session,
-      ragioneSociale: (aeData.ragioneSociale as string) || session.ragioneSociale,
-      partitaIva: (aeData.partitaIva as string) || session.partitaIva,
-      codiceFiscale: (aeData.codiceFiscale as string) || session.codiceFiscale,
-      indirizzo: (aeData.indirizzo as string) || session.indirizzo,
-      numeroCivico: (aeData.numeroCivico as string) || session.numeroCivico,
-      cap: (aeData.cap as string) || session.cap,
-      comune: (aeData.comune as string) || session.comune,
-      provincia: (aeData.provincia as string) || session.provincia,
-      defAliquotaIVA: (aeData.defAliquotaIVA as string) || session.defAliquotaIVA,
-    };
-    setSession(updated);
+      ragioneSociale: ragioneSociale || session.ragioneSociale,
+      partitaIva:     partitaIva     || session.partitaIva,
+      codiceFiscale:  codiceFiscale  || session.codiceFiscale,
+    });
   }
 
+  req.log.info({ ragioneSociale, partitaIva, codiceFiscale, utenteCf: utente.cf }, "AE /me mapped");
+
   const meResult = GetMeResponse.parse({
-    ragioneSociale: (aeData?.ragioneSociale as string) ?? session?.ragioneSociale ?? "",
-    partitaIva: (aeData?.partitaIva as string) ?? session?.partitaIva ?? "",
-    codiceFiscale: (aeData?.codiceFiscale as string) ?? session?.codiceFiscale ?? "",
-    indirizzo: (aeData?.indirizzo as string) ?? session?.indirizzo ?? "",
-    comune: (aeData?.comune as string) ?? session?.comune ?? "",
-    cap: (aeData?.cap as string) ?? session?.cap ?? "",
-    provincia: (aeData?.provincia as string) ?? session?.provincia ?? "",
+    ragioneSociale: ragioneSociale || session?.ragioneSociale || "",
+    partitaIva:     partitaIva     || session?.partitaIva     || "",
+    codiceFiscale:  codiceFiscale  || session?.codiceFiscale  || "",
+    indirizzo: session?.indirizzo  || "",
+    comune:    session?.comune     || "",
+    cap:       session?.cap        || "",
+    provincia: session?.provincia  || "",
   });
 
   res.json(meResult);

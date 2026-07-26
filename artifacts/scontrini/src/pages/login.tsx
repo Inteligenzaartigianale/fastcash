@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Shield, Eye, EyeOff, Loader2, ClipboardPaste, Zap } from "lucide-react";
+import { Shield, Eye, EyeOff, Loader2, ClipboardPaste, Zap, ExternalLink, ChevronDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
@@ -59,7 +59,7 @@ type LoginMode = "auto" | "cookie";
 export default function LoginPage() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const [mode, setMode] = useState<LoginMode>("auto");
+  const [mode, setMode] = useState<LoginMode>("cookie");
 
   // Auto mode fields
   const [codiceFiscale, setCodiceFiscale] = useState("");

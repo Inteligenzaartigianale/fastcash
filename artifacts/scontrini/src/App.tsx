@@ -6,6 +6,7 @@ import { Route, Switch, Router as WouterRouter } from 'wouter';
 import HomePage from '@/pages/home';
 import LoginPage from '@/pages/login';
 import RisultatoPage from '@/pages/risultato';
+import AdminPage from '@/pages/admin';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -22,6 +23,7 @@ function Router() {
       <Route path="/" component={HomePage} />
       <Route path="/login" component={LoginPage} />
       <Route path="/risultato" component={RisultatoPage} />
+      <Route path="/admin" component={AdminPage} />
       <Route component={NotFound} />
     </Switch>
   );

@@ -1,389 +1,646 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useGetMe, useInviaDocumento, useLogout } from "@workspace/api-client-react";
 import { useRequireAuth } from "@/hooks/use-require-auth";
+import { formatCurrency } from "@/lib/utils";
+import { useToast } from "@/hooks/use-toast";
+import {
+  loadCatalog, saveCatalog, type Catalog, type Articolo, type AliquotaIva,
+} from "@/lib/catalog";
+import {
+  Settings, LogOut, ShoppingCart, Trash2, Plus, Minus, Pencil, Send, ChevronLeft, X,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Checkbox } from "@/components/ui/checkbox";
-import { formatCurrency } from "@/lib/utils";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { CurrencyInput } from "@/components/currency-input";
-import { LogOut, Plus, Trash2, FileText, Send } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
-import { RigaDocumento, PagamentoInput, DocumentoInputCorrispettivoNonRiscosso } from "@workspace/api-client-react/src/generated/api.schemas";
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+interface CartItem {
+  articoloId: string;
+  nome: string;
+  prezzoUnitario: number;
+  aliquotaIva: AliquotaIva;
+  quantita: number;
+  sconto: number;
+  omaggio: boolean;
+}
+
+const IVA_OPTIONS: AliquotaIva[] = ["22", "10", "5", "4", "Esente", "Non soggette"];
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function itemTotale(item: CartItem): number {
+  return item.quantita * item.prezzoUnitario - item.sconto;
+}
+
+function calcTotals(cart: CartItem[]) {
+  let complessivo = 0, imponibile = 0, imposta = 0;
+  for (const item of cart) {
+    const tot = itemTotale(item);
+    const aliq = parseFloat(item.aliquotaIva);
+    const hasIva = !isNaN(aliq) && aliq > 0;
+    const div = hasIva ? 1 + aliq / 100 : 1;
+    const imp = tot / div;
+    imponibile += imp;
+    imposta += tot - imp;
+    complessivo += tot;
+  }
+  return { complessivo, imponibile, imposta };
+}
+
+// ── Main Component ────────────────────────────────────────────────────────────
 
 export default function HomePage() {
   const { isAuthenticated, isLoading: authLoading } = useRequireAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  
   const { data: me } = useGetMe({ query: { enabled: !!isAuthenticated } });
   const logoutMutation = useLogout();
   const inviaMutation = useInviaDocumento();
 
-  // Form State
-  const [tipoOperazione, setTipoOperazione] = useState("Vendita/Prestazione");
-  const [codiceLotteria, setCodiceLotteria] = useState("");
-  const [righe, setRighe] = useState<RigaDocumento[]>([
-    { quantita: 1, descrizione: "", prezzoUnitario: 0, aliquotaIva: "22", sconto: 0, omaggio: false }
-  ]);
-  
-  const [pagamento, setPagamento] = useState<PagamentoInput>({
-    contanti: 0,
-    elettronico: 0,
-    ticketRestaurant: 0,
-    numeroTicket: "",
-    scontoAPagare: 0,
-    documentoCollegato: ""
-  });
+  // Catalog
+  const [catalog, setCatalog] = useState<Catalog>(loadCatalog);
+  const saveCat = useCallback((c: Catalog) => { setCatalog(c); saveCatalog(c); }, []);
 
-  const [nonRiscosso, setNonRiscosso] = useState<DocumentoInputCorrispettivoNonRiscosso>({
-    emissioneFattura: false,
-    prestazioniServizi: 0,
-    creditoCessioneBene: 0
-  });
+  // Navigation
+  const [repartoId, setRepartoId] = useState<string | null>(null);
+  const [categoriaId, setCategoriaId] = useState<string | null>(null);
 
-  // Calculate Totals Real-time
-  const totals = useMemo(() => {
-    let imponibile = 0;
-    let imposta = 0;
-    let complessivo = 0;
-    let scontoTotale = 0;
-    
-    // For payment validation
-    let totaleDaPagare = 0;
+  // Cart
+  const [cart, setCart] = useState<CartItem[]>([]);
+  const [showCart, setShowCart] = useState(false); // mobile overlay
+  const [editIdx, setEditIdx] = useState<number | null>(null); // item being edited
 
-    righe.forEach(r => {
-      const qta = Number(r.quantita) || 0;
-      const pu = Number(r.prezzoUnitario) || 0;
-      const sc = Number(r.sconto) || 0;
-      
-      const prezzoComplessivo = qta * pu;
-      let importoIva = 0;
-      
-      if (['22', '10', '5', '4'].includes(r.aliquotaIva)) {
-        const aliq = Number(r.aliquotaIva) / 100;
-        importoIva = prezzoComplessivo * aliq / (1 + aliq);
-      }
-      
-      const rigaNetto = prezzoComplessivo - importoIva;
-      
-      imponibile += rigaNetto;
-      imposta += importoIva;
-      complessivo += (prezzoComplessivo - sc);
-      scontoTotale += sc;
-      
-      if (!r.omaggio) {
-        totaleDaPagare += (prezzoComplessivo - sc);
-      }
+  // Payment
+  const [modoPagamento, setModoPagamento] = useState<"contanti" | "elettronico" | "ticket">("contanti");
+  const [importoContanti, setImportoContanti] = useState(0);
+  const [importoElettronic, setImportoElettronico] = useState(0);
+  const [importoTicket, setImportoTicket] = useState(0);
+  const [nTicket, setNTicket] = useState("");
+  const [tipoOp, setTipoOp] = useState("Vendita/Prestazione");
+  const [lotteria, setLotteria] = useState("");
+
+  // Derived catalog
+  const categorieFiltrate = useMemo(() =>
+    catalog.categorie.filter(c => !repartoId || c.repartoId === repartoId),
+    [catalog.categorie, repartoId]
+  );
+
+  const articoliFiltrati = useMemo(() => {
+    return catalog.articoli.filter(a => {
+      if (!a.attivo) return false;
+      if (categoriaId) return a.categoriaId === categoriaId;
+      if (repartoId) return categorieFiltrate.some(c => c.id === a.categoriaId);
+      return true;
     });
+  }, [catalog.articoli, categoriaId, repartoId, categorieFiltrate]);
 
-    const totalePagato = (Number(pagamento.contanti) || 0) + 
-                         (Number(pagamento.elettronico) || 0) + 
-                         (Number(pagamento.ticketRestaurant) || 0);
-                         
-    const totaleNonRiscosso = (Number(nonRiscosso.prestazioniServizi) || 0) + 
-                              (Number(nonRiscosso.creditoCessioneBene) || 0);
+  const totals = useMemo(() => calcTotals(cart), [cart]);
 
-    return { imponibile, imposta, complessivo, scontoTotale, totaleDaPagare, totalePagato, totaleNonRiscosso };
-  }, [righe, pagamento, nonRiscosso]);
+  // Auto-fill payment amount when total changes
+  useEffect(() => {
+    if (modoPagamento === "elettronico") setImportoElettronico(totals.complessivo);
+    if (modoPagamento === "contanti" && importoContanti === 0) setImportoContanti(totals.complessivo);
+  }, [totals.complessivo, modoPagamento]);
 
-  // Sync cash to totally cover the gap if possible (optional convenience, but AE portal requires manual entry, we will just let user type it)
+  const totalePagato = importoContanti + importoElettronic + importoTicket;
+  const resto = modoPagamento === "contanti" ? Math.max(0, importoContanti - totals.complessivo) : 0;
 
-  const handleRigaChange = (index: number, field: keyof RigaDocumento, value: any) => {
-    const newRighe = [...righe];
-    newRighe[index] = { ...newRighe[index], [field]: value };
-    setRighe(newRighe);
+  // ── Cart actions ──────────────────────────────────────────────────────────
+
+  const addToCart = useCallback((art: Articolo) => {
+    setCart(prev => {
+      const idx = prev.findIndex(i => i.articoloId === art.id);
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = { ...next[idx], quantita: next[idx].quantita + 1 };
+        return next;
+      }
+      return [...prev, {
+        articoloId: art.id,
+        nome: art.nome,
+        prezzoUnitario: art.prezzoUnitario,
+        aliquotaIva: art.aliquotaIva,
+        quantita: 1,
+        sconto: 0,
+        omaggio: false,
+      }];
+    });
+  }, []);
+
+  const updateQty = (idx: number, delta: number) => {
+    setCart(prev => {
+      const next = [...prev];
+      const newQty = next[idx].quantita + delta;
+      if (newQty <= 0) return next.filter((_, i) => i !== idx);
+      next[idx] = { ...next[idx], quantita: newQty };
+      return next;
+    });
   };
 
-  const addRiga = () => {
-    setRighe([...righe, { quantita: 1, descrizione: "", prezzoUnitario: 0, aliquotaIva: "22", sconto: 0, omaggio: false }]);
+  const removeItem = (idx: number) => setCart(prev => prev.filter((_, i) => i !== idx));
+
+  const updateItem = (idx: number, patch: Partial<CartItem>) => {
+    setCart(prev => prev.map((item, i) => i === idx ? { ...item, ...patch } : item));
   };
 
-  const removeRiga = (index: number) => {
-    if (righe.length === 1) return;
-    setRighe(righe.filter((_, i) => i !== index));
+  const clearCart = () => {
+    setCart([]);
+    setImportoContanti(0);
+    setImportoElettronico(0);
+    setImportoTicket(0);
+    setNTicket("");
+    setShowCart(false);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    // Basic validation
-    if (righe.some(r => !r.descrizione || r.prezzoUnitario <= 0)) {
-      toast({ title: "Errore", description: "Completa tutte le righe con descrizione e prezzo > 0", variant: "destructive" });
+  // ── Submit ────────────────────────────────────────────────────────────────
+
+  const handleSubmit = () => {
+    if (cart.length === 0) {
+      toast({ title: "Carrello vuoto", description: "Aggiungi almeno un articolo", variant: "destructive" });
       return;
     }
-    
-    // Check totals roughly
-    const difference = Math.abs(totals.totaleDaPagare - (totals.totalePagato + totals.totaleNonRiscosso + (Number(pagamento.scontoAPagare) || 0)));
-    if (difference > 0.01) {
-      toast({ title: "Attenzione", description: "Gli importi di pagamento non quadrano con il totale", variant: "destructive" });
+    const diff = Math.abs(totals.complessivo - totalePagato);
+    if (diff > 0.01) {
+      toast({ title: "Pagamento non quadra", description: `Mancano € ${formatCurrency(totals.complessivo - totalePagato)}`, variant: "destructive" });
+      return;
     }
 
     inviaMutation.mutate({
       data: {
-        tipoOperazione,
-        codiceLotteria: codiceLotteria || undefined,
-        righe,
-        pagamento,
-        corrispettivoNonRiscosso: nonRiscosso
+        tipoOperazione: tipoOp,
+        codiceLotteria: lotteria || undefined,
+        righe: cart.map(i => ({
+          quantita: i.quantita,
+          descrizione: i.nome,
+          prezzoUnitario: i.prezzoUnitario,
+          aliquotaIva: i.aliquotaIva,
+          sconto: i.sconto || 0,
+          omaggio: i.omaggio,
+        })),
+        pagamento: {
+          contanti: importoContanti,
+          elettronico: importoElettronic,
+          ticketRestaurant: importoTicket,
+          numeroTicket: nTicket || undefined,
+          scontoAPagare: 0,
+          documentoCollegato: "",
+        },
       }
     }, {
       onSuccess: (res) => {
         if (res.success) {
           sessionStorage.setItem("scontrino_result", JSON.stringify(res));
-          sessionStorage.setItem("scontrino_rows", JSON.stringify(righe));
+          sessionStorage.setItem("scontrino_rows", JSON.stringify(cart.map(i => ({
+            quantita: i.quantita, descrizione: i.nome, prezzoUnitario: i.prezzoUnitario, aliquotaIva: i.aliquotaIva,
+          }))));
+          clearCart();
           setLocation("/risultato");
-        } else {
-          toast({ title: "Errore Invio", description: "La richiesta è fallita", variant: "destructive" });
         }
       },
       onError: (err) => {
-        toast({ title: "Errore API", description: err.error || "Errore durante l'invio", variant: "destructive" });
+        toast({ title: "Errore invio", description: err.error || "Errore durante l'invio", variant: "destructive" });
       }
     });
   };
 
   if (authLoading || !isAuthenticated) return null;
 
-  const today = new Intl.DateTimeFormat('it-IT', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute:'2-digit' }).format(new Date());
+  const reparto = catalog.reparti.find(r => r.id === repartoId);
+
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-[100dvh] flex flex-col bg-background pb-20">
-      <header className="bg-primary text-primary-foreground py-3 px-6 shadow flex items-center justify-between sticky top-0 z-10">
-        <div className="flex items-center gap-3">
-          <FileText className="w-5 h-5" />
-          <div>
-            <h1 className="font-semibold text-lg leading-tight">Generazione Documento Commerciale</h1>
-            {me && (
-              <p className="text-xs text-primary-foreground/80 font-mono">
-                {me.ragioneSociale} • P.IVA {me.partitaIva}
-              </p>
+    <div className="h-[100dvh] flex flex-col bg-gray-100 overflow-hidden">
+
+      {/* ── HEADER ── */}
+      <header className="bg-[#1e3a5f] text-white px-4 py-2.5 flex items-center justify-between shrink-0 shadow-lg z-20">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="min-w-0">
+            <p className="font-bold text-sm leading-tight truncate">{me?.ragioneSociale || "Gestionale"}</p>
+            <p className="text-xs text-white/60 font-mono">{me?.partitaIva || ""}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <Select value={tipoOp} onValueChange={setTipoOp}>
+            <SelectTrigger className="h-8 text-xs bg-white/10 border-white/20 text-white w-44 hidden sm:flex">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="Vendita/Prestazione">Vendita/Prestazione</SelectItem>
+              <SelectItem value="Reso">Reso</SelectItem>
+              <SelectItem value="Annullo">Annullo</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button variant="ghost" size="sm" className="text-white/70 hover:text-white hover:bg-white/10 h-8 w-8 p-0" onClick={() => setLocation("/admin")} title="Gestione catalogo">
+            <Settings className="w-4 h-4" />
+          </Button>
+          <Button variant="ghost" size="sm" className="text-white/70 hover:text-white hover:bg-white/10 h-8 w-8 p-0" onClick={() => logoutMutation.mutate(undefined, { onSettled: () => setLocation('/login') })}>
+            <LogOut className="w-4 h-4" />
+          </Button>
+        </div>
+      </header>
+
+      {/* ── MAIN ── */}
+      <div className="flex-1 flex overflow-hidden">
+
+        {/* ── LEFT: CATALOG PANEL ── */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+
+          {/* Reparti */}
+          <div className="bg-white border-b px-3 py-2 flex gap-2 overflow-x-auto shrink-0 scrollbar-hide">
+            <button
+              onClick={() => { setRepartoId(null); setCategoriaId(null); }}
+              className={`shrink-0 px-4 py-1.5 rounded-full text-sm font-medium transition-all ${!repartoId ? 'bg-[#1e3a5f] text-white shadow' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+            >Tutti</button>
+            {catalog.reparti.map(r => (
+              <button
+                key={r.id}
+                onClick={() => { setRepartoId(r.id); setCategoriaId(null); }}
+                className={`shrink-0 px-4 py-1.5 rounded-full text-sm font-medium transition-all ${repartoId === r.id ? 'text-white shadow' : 'text-gray-600 hover:opacity-80'}`}
+                style={repartoId === r.id ? { backgroundColor: r.colore } : { backgroundColor: r.colore + "22", color: r.colore }}
+              >{r.nome}</button>
+            ))}
+          </div>
+
+          {/* Categorie */}
+          {categorieFiltrate.length > 0 && (
+            <div className="bg-gray-50 border-b px-3 py-1.5 flex gap-2 overflow-x-auto shrink-0 scrollbar-hide">
+              <button
+                onClick={() => setCategoriaId(null)}
+                className={`shrink-0 px-3 py-1 rounded text-xs font-medium transition-all ${!categoriaId ? 'bg-[#1e3a5f] text-white' : 'bg-white text-gray-500 border hover:bg-gray-100'}`}
+              >Tutte</button>
+              {categorieFiltrate.map(c => (
+                <button
+                  key={c.id}
+                  onClick={() => setCategoriaId(c.id)}
+                  className={`shrink-0 px-3 py-1 rounded text-xs font-medium transition-all ${categoriaId === c.id ? 'bg-[#1e3a5f] text-white' : 'bg-white text-gray-500 border hover:bg-gray-100'}`}
+                >{c.nome}</button>
+              ))}
+            </div>
+          )}
+
+          {/* Articoli grid */}
+          <div className="flex-1 overflow-y-auto p-3">
+            {articoliFiltrati.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-gray-400 gap-2">
+                <p className="text-sm">Nessun articolo</p>
+                <button onClick={() => setLocation("/admin")} className="text-xs text-blue-500 underline">Aggiungi dal catalogo</button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
+                {articoliFiltrati.map(art => {
+                  const rep = catalog.reparti.find(r => catalog.categorie.find(c => c.id === art.categoriaId)?.repartoId === r.id);
+                  const colore = rep?.colore ?? "#6b7280";
+                  return (
+                    <button
+                      key={art.id}
+                      onClick={() => addToCart(art)}
+                      className="bg-white rounded-xl p-3 text-left shadow-sm border border-transparent hover:border-current hover:shadow-md active:scale-95 transition-all flex flex-col gap-1 min-h-[80px]"
+                      style={{ borderColor: colore + "40" }}
+                    >
+                      <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: colore }} />
+                      <p className="text-sm font-medium text-gray-800 leading-tight line-clamp-2 flex-1">{art.nome}</p>
+                      <div className="flex items-center justify-between mt-auto">
+                        <p className="text-base font-bold text-gray-900">€ {art.prezzoUnitario.toFixed(2)}</p>
+                        <span className="text-[10px] text-gray-400 font-mono">{art.aliquotaIva === "Esente" ? "ES" : art.aliquotaIva === "Non soggette" ? "NS" : art.aliquotaIva + "%"}</span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             )}
           </div>
         </div>
-        <Button variant="ghost" size="sm" className="text-primary-foreground hover:bg-primary-foreground/10 hover:text-white" onClick={() => logoutMutation.mutate(undefined, { onSettled: () => setLocation('/login') })}>
-          <LogOut className="w-4 h-4 mr-2" />
-          Esci
-        </Button>
-      </header>
 
-      <main className="flex-1 max-w-6xl w-full mx-auto p-4 md:p-6 space-y-6">
-        <form onSubmit={handleSubmit} className="space-y-6">
-          
-          {/* HEADER SECTION */}
-          <div className="bg-white p-5 rounded-md border shadow-sm grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="space-y-2">
-              <Label>Tipo operazione</Label>
-              <Select value={tipoOperazione} onValueChange={setTipoOperazione}>
-                <SelectTrigger className="bg-background">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Vendita/Prestazione">Vendita/Prestazione</SelectItem>
-                  <SelectItem value="Reso">Reso</SelectItem>
-                  <SelectItem value="Annullo">Annullo</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Codice lotteria (opzionale)</Label>
-              <Input 
-                value={codiceLotteria} 
-                onChange={(e) => setCodiceLotteria(e.target.value.toUpperCase())} 
-                placeholder="Es. ABC12345" 
-                maxLength={8}
-                className="font-mono uppercase"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Data emissione</Label>
-              <Input value={today} readOnly className="bg-muted/50 text-muted-foreground font-mono" />
-            </div>
+        {/* ── RIGHT: CART PANEL (desktop) ── */}
+        <div className="hidden md:flex w-80 lg:w-96 flex-col bg-white border-l shadow-inner">
+          <CartPanel
+            cart={cart}
+            totals={totals}
+            totalePagato={totalePagato}
+            resto={resto}
+            modoPagamento={modoPagamento}
+            setModoPagamento={setModoPagamento}
+            importoContanti={importoContanti}
+            setImportoContanti={setImportoContanti}
+            importoElettronico={importoElettronic}
+            setImportoElettronico={setImportoElettronico}
+            importoTicket={importoTicket}
+            setImportoTicket={setImportoTicket}
+            nTicket={nTicket}
+            setNTicket={setNTicket}
+            lotteria={lotteria}
+            setLotteria={setLotteria}
+            onUpdateQty={updateQty}
+            onRemove={removeItem}
+            onEdit={setEditIdx}
+            onClear={clearCart}
+            onSubmit={handleSubmit}
+            isPending={inviaMutation.isPending}
+          />
+        </div>
+      </div>
+
+      {/* ── MOBILE: Cart FAB ── */}
+      {cart.length > 0 && !showCart && (
+        <button
+          onClick={() => setShowCart(true)}
+          className="md:hidden fixed bottom-4 right-4 bg-[#1e3a5f] text-white rounded-full px-5 py-3 shadow-xl flex items-center gap-3 z-30 active:scale-95 transition-transform"
+        >
+          <ShoppingCart className="w-5 h-5" />
+          <span className="font-bold">{cart.reduce((s, i) => s + i.quantita, 0)} art.</span>
+          <span className="font-mono font-bold">€ {formatCurrency(totals.complessivo)}</span>
+        </button>
+      )}
+
+      {/* ── MOBILE: Cart overlay ── */}
+      {showCart && (
+        <div className="md:hidden fixed inset-0 bg-white z-40 flex flex-col">
+          <div className="flex items-center gap-3 px-4 py-3 border-b bg-[#1e3a5f] text-white">
+            <button onClick={() => setShowCart(false)} className="hover:opacity-70">
+              <ChevronLeft className="w-5 h-5" />
+            </button>
+            <h2 className="font-semibold flex-1">Carrello</h2>
           </div>
-
-          {/* RIGHE SECTION */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-primary border-b border-primary/20 pb-1">Elementi contabili</h2>
-            </div>
-            
-            <div className="bg-white rounded-md border shadow-sm overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-16">Q.tà</TableHead>
-                    <TableHead className="min-w-[200px]">Descrizione</TableHead>
-                    <TableHead className="w-28 text-right">Prezzo Unit. €</TableHead>
-                    <TableHead className="w-28">IVA</TableHead>
-                    <TableHead className="w-28 text-right">Sconto €</TableHead>
-                    <TableHead className="w-20 text-center">Omaggio</TableHead>
-                    <TableHead className="w-28 text-right font-semibold">Netto €</TableHead>
-                    <TableHead className="w-10"></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {righe.map((r, i) => {
-                    const qta = Number(r.quantita) || 0;
-                    const pu = Number(r.prezzoUnitario) || 0;
-                    const sc = Number(r.sconto) || 0;
-                    const comp = (qta * pu) - sc;
-                    
-                    return (
-                      <TableRow key={i} className="group hover:bg-muted/20">
-                        <TableCell>
-                          <input type="number" min="0" step="1" className="table-cell-input text-center" value={r.quantita || ""} onChange={(e) => handleRigaChange(i, "quantita", parseFloat(e.target.value))} />
-                        </TableCell>
-                        <TableCell>
-                          <input type="text" className="table-cell-input" placeholder="Descrizione bene/servizio" value={r.descrizione} onChange={(e) => handleRigaChange(i, "descrizione", e.target.value)} />
-                        </TableCell>
-                        <TableCell>
-                          <CurrencyInput className="table-cell-input text-right font-mono" value={Number(r.prezzoUnitario) || 0} onChange={(v) => handleRigaChange(i, "prezzoUnitario", v)} />
-                        </TableCell>
-                        <TableCell className="p-1">
-                          <Select value={r.aliquotaIva} onValueChange={(v) => handleRigaChange(i, "aliquotaIva", v)}>
-                            <SelectTrigger className="h-8 border-none shadow-none focus:ring-1 bg-transparent px-2 text-xs">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="22">22%</SelectItem>
-                              <SelectItem value="10">10%</SelectItem>
-                              <SelectItem value="5">5%</SelectItem>
-                              <SelectItem value="4">4%</SelectItem>
-                              <SelectItem value="Esente">Esente</SelectItem>
-                              <SelectItem value="Non soggette">Non soggette</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </TableCell>
-                        <TableCell>
-                          <CurrencyInput className="table-cell-input text-right text-red-600 font-mono" value={Number(r.sconto) || 0} onChange={(v) => handleRigaChange(i, "sconto", v)} />
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <div className="flex justify-center items-center h-full">
-                            <Checkbox checked={r.omaggio} onCheckedChange={(c) => handleRigaChange(i, "omaggio", !!c)} />
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right px-3 font-mono bg-muted/10">
-                          {formatCurrency(comp)}
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <button type="button" onClick={() => removeRiga(i)} disabled={righe.length === 1} className="text-muted-foreground hover:text-destructive disabled:opacity-30 p-1 rounded-sm">
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-              <div className="p-2 border-t bg-muted/10">
-                <Button type="button" variant="ghost" size="sm" onClick={addRiga} className="text-primary hover:bg-primary/10">
-                  <Plus className="w-4 h-4 mr-2" />
-                  Aggiungi riga
-                </Button>
-              </div>
-            </div>
+          <div className="flex-1 overflow-hidden">
+            <CartPanel
+              cart={cart}
+              totals={totals}
+              totalePagato={totalePagato}
+              resto={resto}
+              modoPagamento={modoPagamento}
+              setModoPagamento={setModoPagamento}
+              importoContanti={importoContanti}
+              setImportoContanti={setImportoContanti}
+              importoElettronico={importoElettronic}
+              setImportoElettronico={setImportoElettronico}
+              importoTicket={importoTicket}
+              setImportoTicket={setImportoTicket}
+              nTicket={nTicket}
+              setNTicket={setNTicket}
+              lotteria={lotteria}
+              setLotteria={setLotteria}
+              onUpdateQty={updateQty}
+              onRemove={removeItem}
+              onEdit={setEditIdx}
+              onClear={clearCart}
+              onSubmit={handleSubmit}
+              isPending={inviaMutation.isPending}
+            />
           </div>
+        </div>
+      )}
 
-          {/* TOTALS BAR */}
-          <div className="bg-primary/5 border border-primary/20 rounded-md p-4 grid grid-cols-2 md:grid-cols-4 gap-4 shadow-inner text-sm">
-            <div>
-              <p className="text-muted-foreground mb-1">Imponibile lordo sconto</p>
-              <p className="font-mono text-lg font-semibold">{formatCurrency(totals.imponibile)}</p>
-            </div>
-            <div>
-              <p className="text-muted-foreground mb-1">Totale IVA</p>
-              <p className="font-mono text-lg font-semibold">{formatCurrency(totals.imposta)}</p>
-            </div>
-            <div>
-              <p className="text-muted-foreground mb-1">Sconto complessivo</p>
-              <p className="font-mono text-lg font-semibold text-red-600">{formatCurrency(totals.scontoTotale)}</p>
-            </div>
-            <div className="bg-primary/10 -m-4 p-4 border-l border-primary/20 flex flex-col justify-center">
-              <p className="text-primary font-medium text-xs uppercase tracking-wider mb-1">Totale Complessivo</p>
-              <p className="font-mono text-2xl font-bold text-primary">€ {formatCurrency(totals.complessivo)}</p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* PAGAMENTO */}
-            <div className="space-y-4">
-              <h2 className="text-lg font-semibold text-primary border-b border-primary/20 pb-1">Pagamento</h2>
-              <div className="bg-white p-5 rounded-md border shadow-sm space-y-4">
-                <div className="grid grid-cols-[1fr_120px] items-center gap-4">
-                  <Label className="font-normal text-muted-foreground">Contanti €</Label>
-                  <CurrencyInput className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm text-right font-mono" value={pagamento.contanti || 0} onChange={(v) => setPagamento({...pagamento, contanti: v})} />
-                </div>
-                <div className="grid grid-cols-[1fr_120px] items-center gap-4">
-                  <Label className="font-normal text-muted-foreground">Elettronico €</Label>
-                  <CurrencyInput className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm text-right font-mono" value={pagamento.elettronico || 0} onChange={(v) => setPagamento({...pagamento, elettronico: v})} />
-                </div>
-                <div className="pt-2 border-t space-y-4">
-                  <div className="grid grid-cols-[1fr_120px] items-center gap-4">
-                    <Label className="font-normal text-muted-foreground">Ticket Restaurant €</Label>
-                    <CurrencyInput className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm text-right font-mono" value={pagamento.ticketRestaurant || 0} onChange={(v) => setPagamento({...pagamento, ticketRestaurant: v})} />
-                  </div>
-                  <div className="grid grid-cols-[1fr_180px] items-center gap-4">
-                    <Label className="font-normal text-muted-foreground">Numero Ticket</Label>
-                    <Input type="text" className="font-mono text-right text-xs" value={pagamento.numeroTicket || ""} onChange={(e) => setPagamento({...pagamento, numeroTicket: e.target.value})} placeholder="Facoltativo" />
-                  </div>
-                </div>
-                <div className="pt-2 border-t space-y-4">
-                  <div className="grid grid-cols-[1fr_120px] items-center gap-4">
-                    <Label className="font-normal text-muted-foreground">Sconto a pagare €</Label>
-                    <CurrencyInput className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm text-right font-mono text-red-600" value={pagamento.scontoAPagare || 0} onChange={(v) => setPagamento({...pagamento, scontoAPagare: v})} />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* CORRISPETTIVO NON RISCOSSO */}
-            <div className="space-y-4">
-              <h2 className="text-lg font-semibold text-primary border-b border-primary/20 pb-1">Corrispettivo non riscosso</h2>
-              <div className="bg-white p-5 rounded-md border shadow-sm space-y-4">
-                <div className="flex items-center space-x-3 bg-muted/30 p-3 rounded border border-muted">
-                  <Checkbox id="fattura" checked={nonRiscosso.emissioneFattura} onCheckedChange={(c) => setNonRiscosso({...nonRiscosso, emissioneFattura: !!c})} />
-                  <Label htmlFor="fattura" className="font-medium cursor-pointer">Emissione fattura collegata</Label>
-                </div>
-                <div className="grid grid-cols-[1fr_120px] items-center gap-4">
-                  <Label className="font-normal text-muted-foreground">Prestazioni di servizi €</Label>
-                  <CurrencyInput className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm text-right font-mono" value={nonRiscosso.prestazioniServizi || 0} onChange={(v) => setNonRiscosso({...nonRiscosso, prestazioniServizi: v})} />
-                </div>
-                <div className="grid grid-cols-[1fr_120px] items-center gap-4">
-                  <Label className="font-normal text-muted-foreground">Credito cessione bene €</Label>
-                  <CurrencyInput className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm text-right font-mono" value={nonRiscosso.creditoCessioneBene || 0} onChange={(v) => setNonRiscosso({...nonRiscosso, creditoCessioneBene: v})} />
-                </div>
-                
-                <div className="pt-6">
-                  <Label className="block mb-2 font-normal text-muted-foreground text-sm">Riferimento doc. precedente (per Reso/Annullo)</Label>
-                  <Input type="text" placeholder="Es. DCW..." className="font-mono text-sm" value={pagamento.documentoCollegato || ""} onChange={(e) => setPagamento({...pagamento, documentoCollegato: e.target.value})} />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/90 backdrop-blur-md border-t shadow-[0_-4px_15px_-5px_rgba(0,0,0,0.1)] z-20 flex justify-end">
-            <div className="w-full max-w-6xl mx-auto flex justify-between items-center px-4">
-              <div className="hidden sm:block">
-                <p className="text-sm text-muted-foreground">Da incassare: <span className="font-mono font-bold text-foreground">€ {formatCurrency(totals.totaleDaPagare)}</span></p>
-                <p className="text-xs text-muted-foreground">Copertura inserita: € {formatCurrency(totals.totalePagato + totals.totaleNonRiscosso + (Number(pagamento.scontoAPagare) || 0))}</p>
-              </div>
-              <Button type="submit" size="lg" className="min-w-[200px]" disabled={inviaMutation.isPending} data-testid="button-submit-doc">
-                {inviaMutation.isPending ? (
-                  "Elaborazione in corso..."
-                ) : (
-                  <>
-                    <Send className="w-4 h-4 mr-2" />
-                    Emetti Documento
-                  </>
-                )}
-              </Button>
-            </div>
-          </div>
-        </form>
-      </main>
+      {/* ── Edit item dialog ── */}
+      {editIdx !== null && cart[editIdx] && (
+        <EditItemDialog
+          item={cart[editIdx]}
+          onSave={(patch) => { updateItem(editIdx, patch); setEditIdx(null); }}
+          onClose={() => setEditIdx(null)}
+        />
+      )}
     </div>
+  );
+}
+
+// ── CartPanel ─────────────────────────────────────────────────────────────────
+
+interface CartPanelProps {
+  cart: CartItem[];
+  totals: { complessivo: number; imponibile: number; imposta: number };
+  totalePagato: number;
+  resto: number;
+  modoPagamento: "contanti" | "elettronico" | "ticket";
+  setModoPagamento: (m: "contanti" | "elettronico" | "ticket") => void;
+  importoContanti: number;
+  setImportoContanti: (v: number) => void;
+  importoElettronico: number;
+  setImportoElettronico: (v: number) => void;
+  importoTicket: number;
+  setImportoTicket: (v: number) => void;
+  nTicket: string;
+  setNTicket: (v: string) => void;
+  lotteria: string;
+  setLotteria: (v: string) => void;
+  onUpdateQty: (idx: number, delta: number) => void;
+  onRemove: (idx: number) => void;
+  onEdit: (idx: number) => void;
+  onClear: () => void;
+  onSubmit: () => void;
+  isPending: boolean;
+}
+
+function CartPanel({ cart, totals, totalePagato, resto, modoPagamento, setModoPagamento,
+  importoContanti, setImportoContanti, importoElettronico, setImportoElettronico,
+  importoTicket, setImportoTicket, nTicket, setNTicket, lotteria, setLotteria,
+  onUpdateQty, onRemove, onEdit, onClear, onSubmit, isPending }: CartPanelProps) {
+
+  const diff = totals.complessivo - totalePagato;
+  const balanced = Math.abs(diff) < 0.01;
+
+  return (
+    <div className="h-full flex flex-col">
+      {/* Cart header */}
+      <div className="px-4 py-2.5 border-b flex items-center justify-between shrink-0">
+        <h2 className="font-semibold text-gray-700 flex items-center gap-2">
+          <ShoppingCart className="w-4 h-4" />
+          Carrello {cart.length > 0 && <span className="text-xs bg-gray-100 text-gray-500 rounded-full px-2 py-0.5">{cart.reduce((s, i) => s + i.quantita, 0)}</span>}
+        </h2>
+        {cart.length > 0 && (
+          <button onClick={onClear} className="text-xs text-red-400 hover:text-red-600 flex items-center gap-1">
+            <Trash2 className="w-3 h-3" /> Svuota
+          </button>
+        )}
+      </div>
+
+      {/* Items */}
+      <div className="flex-1 overflow-y-auto">
+        {cart.length === 0 ? (
+          <div className="h-full flex items-center justify-center text-gray-300 text-sm">
+            Tocca un articolo per aggiungerlo
+          </div>
+        ) : (
+          <div className="divide-y">
+            {cart.map((item, idx) => (
+              <div key={idx} className="px-3 py-2.5 flex items-center gap-2 hover:bg-gray-50">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-800 truncate">{item.nome}</p>
+                  <p className="text-xs text-gray-400 font-mono">
+                    € {item.prezzoUnitario.toFixed(2)} × {item.quantita}
+                    {item.sconto > 0 && <span className="text-red-400"> −{item.sconto.toFixed(2)}</span>}
+                    <span className="ml-1 text-gray-300">· {item.aliquotaIva}%</span>
+                  </p>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button onClick={() => onUpdateQty(idx, -1)} className="w-7 h-7 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-600">
+                    <Minus className="w-3 h-3" />
+                  </button>
+                  <span className="w-6 text-center text-sm font-bold">{item.quantita}</span>
+                  <button onClick={() => onUpdateQty(idx, 1)} className="w-7 h-7 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-600">
+                    <Plus className="w-3 h-3" />
+                  </button>
+                </div>
+                <p className="text-sm font-bold text-gray-800 w-14 text-right shrink-0">
+                  € {formatCurrency(itemTotale(item))}
+                </p>
+                <div className="flex flex-col gap-0.5 shrink-0">
+                  <button onClick={() => onEdit(idx)} className="text-gray-300 hover:text-blue-500 transition-colors">
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
+                  <button onClick={() => onRemove(idx)} className="text-gray-300 hover:text-red-500 transition-colors">
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Totals */}
+      {cart.length > 0 && (
+        <>
+          <div className="bg-gray-50 border-t px-4 py-2 space-y-0.5 shrink-0 text-xs text-gray-500">
+            <div className="flex justify-between"><span>Imponibile</span><span className="font-mono">€ {formatCurrency(totals.imponibile)}</span></div>
+            <div className="flex justify-between"><span>IVA</span><span className="font-mono">€ {formatCurrency(totals.imposta)}</span></div>
+            <div className="flex justify-between text-sm font-bold text-gray-800 pt-1 border-t">
+              <span>TOTALE</span><span className="font-mono">€ {formatCurrency(totals.complessivo)}</span>
+            </div>
+          </div>
+
+          {/* Payment */}
+          <div className="border-t px-4 py-3 space-y-3 shrink-0">
+            {/* Mode buttons */}
+            <div className="grid grid-cols-3 gap-1.5">
+              {(["contanti", "elettronico", "ticket"] as const).map(m => (
+                <button
+                  key={m}
+                  onClick={() => setModoPagamento(m)}
+                  className={`py-2 rounded-lg text-xs font-semibold transition-all ${modoPagamento === m ? 'bg-[#1e3a5f] text-white shadow' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+                >
+                  {m === "contanti" ? "💵 Contanti" : m === "elettronico" ? "💳 Carta" : "🎫 Ticket"}
+                </button>
+              ))}
+            </div>
+
+            {/* Amount inputs */}
+            {modoPagamento === "contanti" && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-500 w-20 shrink-0">Incassato €</span>
+                  <CurrencyInput className="flex-1 h-9 rounded border px-3 text-right font-mono text-sm" value={importoContanti} onChange={setImportoContanti} />
+                </div>
+                {resto > 0 && (
+                  <div className="bg-green-50 border border-green-200 rounded-lg px-3 py-1.5 flex justify-between items-center">
+                    <span className="text-xs text-green-700 font-medium">Resto</span>
+                    <span className="font-mono font-bold text-green-700">€ {formatCurrency(resto)}</span>
+                  </div>
+                )}
+              </div>
+            )}
+            {modoPagamento === "elettronico" && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-500 w-20 shrink-0">Importo €</span>
+                <CurrencyInput className="flex-1 h-9 rounded border px-3 text-right font-mono text-sm" value={importoElettronico} onChange={setImportoElettronico} />
+              </div>
+            )}
+            {modoPagamento === "ticket" && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-500 w-20 shrink-0">Importo €</span>
+                  <CurrencyInput className="flex-1 h-9 rounded border px-3 text-right font-mono text-sm" value={importoTicket} onChange={setImportoTicket} />
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-500 w-20 shrink-0">N° ticket</span>
+                  <input className="flex-1 h-9 rounded border px-3 text-sm font-mono" placeholder="Facoltativo" value={nTicket} onChange={e => setNTicket(e.target.value)} />
+                </div>
+              </div>
+            )}
+
+            {/* Lotteria */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-400 w-20 shrink-0">Lotteria</span>
+              <input className="flex-1 h-8 rounded border px-3 text-xs font-mono uppercase" placeholder="Codice (opzionale)" value={lotteria} onChange={e => setLotteria(e.target.value.toUpperCase())} maxLength={8} />
+            </div>
+
+            {/* Balance indicator */}
+            {!balanced && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5 text-xs text-amber-700 text-center">
+                {diff > 0 ? `Mancano € ${formatCurrency(diff)}` : `Eccesso € ${formatCurrency(-diff)}`}
+              </div>
+            )}
+
+            {/* Submit */}
+            <button
+              onClick={onSubmit}
+              disabled={isPending || cart.length === 0}
+              className="w-full bg-[#1e3a5f] hover:bg-[#1e40af] disabled:opacity-50 text-white font-bold py-3.5 rounded-xl flex items-center justify-center gap-2 transition-colors shadow-lg active:scale-95"
+            >
+              {isPending ? (
+                <span className="text-sm">Elaborazione...</span>
+              ) : (
+                <>
+                  <Send className="w-4 h-4" />
+                  <span>Emetti Documento</span>
+                </>
+              )}
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── EditItemDialog ────────────────────────────────────────────────────────────
+
+function EditItemDialog({ item, onSave, onClose }: { item: CartItem; onSave: (p: Partial<CartItem>) => void; onClose: () => void }) {
+  const [prezzo, setPrezzo] = useState(item.prezzoUnitario);
+  const [iva, setIva] = useState<AliquotaIva>(item.aliquotaIva);
+  const [sconto, setSconto] = useState(item.sconto);
+  const [omaggio, setOmaggio] = useState(item.omaggio);
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="text-base">{item.nome}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 pt-2">
+          <div className="space-y-1.5">
+            <Label className="text-xs text-gray-500">Prezzo unitario €</Label>
+            <CurrencyInput className="w-full h-10 rounded border px-3 text-right font-mono" value={prezzo} onChange={setPrezzo} />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs text-gray-500">Aliquota IVA</Label>
+            <Select value={iva} onValueChange={v => setIva(v as AliquotaIva)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {IVA_OPTIONS.map(o => <SelectItem key={o} value={o}>{o === "Esente" || o === "Non soggette" ? o : `${o}%`}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs text-gray-500">Sconto riga €</Label>
+            <CurrencyInput className="w-full h-10 rounded border px-3 text-right font-mono text-red-600" value={sconto} onChange={setSconto} />
+          </div>
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input type="checkbox" checked={omaggio} onChange={e => setOmaggio(e.target.checked)} className="w-4 h-4 rounded" />
+            <span className="text-sm text-gray-700">Omaggio (non incassato)</span>
+          </label>
+          <div className="flex gap-2 pt-2">
+            <Button variant="outline" className="flex-1" onClick={onClose}>Annulla</Button>
+            <Button className="flex-1 bg-[#1e3a5f]" onClick={() => onSave({ prezzoUnitario: prezzo, aliquotaIva: iva, sconto, omaggio })}>
+              Salva
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }

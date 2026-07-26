@@ -1,0 +1,22 @@
+~/workspace$ pnpm --filter @workspace/scontrini run dev
+
+> @workspace/scontrini@0.0.0 dev /home/runner/workspace/artifacts/scontrini
+> vite --config vite.config.ts --host 0.0.0.0
+
+failed to load config from /home/runner/workspace/artifacts/scontrini/vite.config.ts
+error when starting dev server:
+Error: PORT environment variable is required but was not provided.
+    at file:///home/runner/workspace/artifacts/scontrini/node_modules/.vite-temp/vite.config.ts.timestamp-1785100865301-909de153e0a818.mjs:10:9
+    at ModuleJob.run (node:internal/modules/esm/module_job:413:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:660:26)
+    at async loadConfigFromBundledFile (file:///home/runner/workspace/node_modules/.pnpm/vite@7.3.6_@types+node@25.9.5_jiti@2.7.0_lightningcss@1.32.0_tsx@4.23.1_yaml@2.9.0/node_modules/vite/dist/node/chunks/config.js:35996:12)
+    at async bundleAndLoadConfigFile (file:///home/runner/workspace/node_modules/.pnpm/vite@7.3.6_@types+node@25.9.5_jiti@2.7.0_lightningcss@1.32.0_tsx@4.23.1_yaml@2.9.0/node_modules/vite/dist/node/chunks/config.js:35884:17)
+    at async loadConfigFromFile (file:///home/runner/workspace/node_modules/.pnpm/vite@7.3.6_@types+node@25.9.5_jiti@2.7.0_lightningcss@1.32.0_tsx@4.23.1_yaml@2.9.0/node_modules/vite/dist/node/chunks/config.js:35851:42)
+    at async resolveConfig (file:///home/runner/workspace/node_modules/.pnpm/vite@7.3.6_@types+node@25.9.5_jiti@2.7.0_lightningcss@1.32.0_tsx@4.23.1_yaml@2.9.0/node_modules/vite/dist/node/chunks/config.js:35500:22)
+    at async _createServer (file:///home/runner/workspace/node_modules/.pnpm/vite@7.3.6_@types+node@25.9.5_jiti@2.7.0_lightningcss@1.32.0_tsx@4.23.1_yaml@2.9.0/node_modules/vite/dist/node/chunks/config.js:25441:67)
+    at async CAC.<anonymous> (file:///home/runner/workspace/node_modules/.pnpm/vite@7.3.6_@types+node@25.9.5_jiti@2.7.0_lightningcss@1.32.0_tsx@4.23.1_yaml@2.9.0/node_modules/vite/dist/node/cli.js:572:18)
+/home/runner/workspace/artifacts/scontrini:
+ ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @workspace/scontrini@0.0.0 dev: `vite --config vite.config.ts --host 0.0.0.0`
+Exit status 1
+~/workspace$ 
+

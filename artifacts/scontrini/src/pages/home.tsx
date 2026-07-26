@@ -4,9 +4,8 @@ import { useGetMe, useInviaDocumento, useLogout } from "@workspace/api-client-re
 import { useRequireAuth } from "@/hooks/use-require-auth";
 import { formatCurrency } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import {
-  loadCatalog, saveCatalog, type Catalog, type Articolo, type AliquotaIva,
-} from "@/lib/catalog";
+import { fetchCatalog, type Catalog, type Articolo, type AliquotaIva } from "@/lib/catalog";
+import { useQuery } from "@tanstack/react-query";
 import {
   Settings, LogOut, ShoppingCart, Trash2, Plus, Minus, Pencil, Send, ChevronLeft, X,
 } from "lucide-react";
@@ -62,9 +61,9 @@ export default function HomePage() {
   const logoutMutation = useLogout();
   const inviaMutation = useInviaDocumento();
 
-  // Catalog
-  const [catalog, setCatalog] = useState<Catalog>(loadCatalog);
-  const saveCat = useCallback((c: Catalog) => { setCatalog(c); saveCatalog(c); }, []);
+  // Catalog from DB
+  const { data: catalog } = useQuery({ queryKey: ["catalog"], queryFn: fetchCatalog });
+  const emptyC: Catalog = { reparti: [], categorie: [], articoli: [] };
 
   // Navigation
   const [repartoId, setRepartoId] = useState<string | null>(null);
@@ -84,20 +83,21 @@ export default function HomePage() {
   const [tipoOp, setTipoOp] = useState("Vendita/Prestazione");
   const [lotteria, setLotteria] = useState("");
 
-  // Derived catalog
+  // Derived catalog (catalog can be undefined while loading)
+  const cat = catalog ?? emptyC;
   const categorieFiltrate = useMemo(() =>
-    catalog.categorie.filter(c => !repartoId || c.repartoId === repartoId),
-    [catalog.categorie, repartoId]
+    cat.categorie.filter(c => !repartoId || c.repartoId === repartoId),
+    [cat.categorie, repartoId]
   );
 
   const articoliFiltrati = useMemo(() => {
-    return catalog.articoli.filter(a => {
+    return cat.articoli.filter(a => {
       if (!a.attivo) return false;
       if (categoriaId) return a.categoriaId === categoriaId;
       if (repartoId) return categorieFiltrate.some(c => c.id === a.categoriaId);
       return true;
     });
-  }, [catalog.articoli, categoriaId, repartoId, categorieFiltrate]);
+  }, [cat.articoli, categoriaId, repartoId, categorieFiltrate]);
 
   const totals = useMemo(() => calcTotals(cart), [cart]);
 
@@ -210,7 +210,7 @@ export default function HomePage() {
 
   if (authLoading || !isAuthenticated) return null;
 
-  const reparto = catalog.reparti.find(r => r.id === repartoId);
+  const reparto = cat.reparti.find(r => r.id === repartoId);
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -257,7 +257,7 @@ export default function HomePage() {
               onClick={() => { setRepartoId(null); setCategoriaId(null); }}
               className={`shrink-0 px-4 py-1.5 rounded-full text-sm font-medium transition-all ${!repartoId ? 'bg-[#1e3a5f] text-white shadow' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
             >Tutti</button>
-            {catalog.reparti.map(r => (
+            {cat.reparti.map(r => (
               <button
                 key={r.id}
                 onClick={() => { setRepartoId(r.id); setCategoriaId(null); }}
@@ -294,7 +294,7 @@ export default function HomePage() {
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
                 {articoliFiltrati.map(art => {
-                  const rep = catalog.reparti.find(r => catalog.categorie.find(c => c.id === art.categoriaId)?.repartoId === r.id);
+                  const rep = cat.reparti.find(r => cat.categorie.find(c => c.id === art.categoriaId)?.repartoId === r.id);
                   const colore = rep?.colore ?? "#6b7280";
                   return (
                     <button

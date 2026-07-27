@@ -185,7 +185,7 @@ router.post("/auth/cookie", async (req, res): Promise<void> => {
     comune: "",
     provincia: "",
     defAliquotaIVA: "22",
-    credentials: { codiceFiscale: codiceFiscale.toUpperCase(), password: "", pin: "" },
+    credentials: { codiceFiscale: (codiceFiscale ?? "").toUpperCase(), password: "", pin: "" },
     createdAt: new Date(),
   });
 

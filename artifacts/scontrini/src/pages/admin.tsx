@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { useLocation } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   fetchCatalog,
@@ -7,7 +6,8 @@ import {
   createArticolo, updateArticolo, deleteArticolo,
   type Reparto, type Articolo, type AliquotaIva,
 } from "@/lib/catalog";
-import { ArrowLeft, Plus, Pencil, Trash2, Check } from "lucide-react";
+import { Plus, Pencil, Trash2, Check } from "lucide-react";
+import { BottomNav } from "@/components/bottom-nav";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -20,7 +20,6 @@ const IVA_OPTIONS: AliquotaIva[] = ["22", "10", "5", "4", "Esente", "Non soggett
 const COLORI = ["#ef4444","#f97316","#eab308","#22c55e","#14b8a6","#3b82f6","#8b5cf6","#ec4899","#6b7280","#1e3a5f"];
 
 export default function AdminPage() {
-  const [, setLocation] = useLocation();
   const [tab, setTab] = useState<"reparti" | "articoli">("reparti");
   const qc = useQueryClient();
   const { data: catalog, isLoading } = useQuery({ queryKey: ["catalog"], queryFn: fetchCatalog });
@@ -37,9 +36,6 @@ export default function AdminPage() {
   return (
     <div className="h-[100dvh] flex flex-col bg-gray-50">
       <header className="bg-[#1e3a5f] text-white px-4 py-3 flex items-center gap-3 shrink-0 shadow">
-        <button onClick={() => setLocation("/")} className="hover:opacity-70 transition-opacity">
-          <ArrowLeft className="w-5 h-5" />
-        </button>
         <h1 className="font-bold text-base">⚙️ Impostazioni</h1>
       </header>
 
@@ -55,6 +51,8 @@ export default function AdminPage() {
         {tab === "reparti"  && <RepartiPanel  catalog={catalog} onRefresh={invalidate} />}
         {tab === "articoli" && <ArticoliPanel catalog={catalog} onRefresh={invalidate} />}
       </div>
+
+      <BottomNav />
     </div>
   );
 }

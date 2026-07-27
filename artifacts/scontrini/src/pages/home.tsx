@@ -6,9 +6,8 @@ import { formatCurrency } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { fetchCatalog, type Catalog, type Articolo, type AliquotaIva } from "@/lib/catalog";
 import { useQuery } from "@tanstack/react-query";
-import {
-  Settings, LogOut, ShoppingCart, Trash2, Plus, Minus, Pencil, Send, ChevronLeft, X,
-} from "lucide-react";
+import { LogOut, ShoppingCart, Trash2, Plus, Minus, Pencil, Send, ChevronLeft, X } from "lucide-react";
+import { BottomNav } from "@/components/bottom-nav";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -57,7 +56,7 @@ export default function HomePage() {
   const { isAuthenticated, isLoading: authLoading } = useRequireAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const { data: me } = useGetMe({ query: { enabled: !!isAuthenticated } });
+  const { data: me, isError: meError } = useGetMe({ query: { enabled: !!isAuthenticated } });
   const logoutMutation = useLogout();
   const inviaMutation = useInviaDocumento();
 
@@ -197,7 +196,15 @@ export default function HomePage() {
         }
       },
       onError: (err) => {
-        toast({ title: "Errore invio", description: err.error || "Errore durante l'invio", variant: "destructive" });
+        const msg = err.error || "Errore durante l'invio";
+        const isAuth = msg.includes("401") || msg.includes("405") || msg.includes("sessione") || msg.includes("Unauthorized");
+        toast({
+          title: isAuth ? "Sessione scaduta" : "Errore invio",
+          description: isAuth
+            ? "La sessione ADE è scaduta. Usa l'estensione Chrome per riconnetterti."
+            : msg,
+          variant: "destructive",
+        });
       }
     });
   };
@@ -209,7 +216,15 @@ export default function HomePage() {
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="h-[100dvh] flex flex-col bg-gray-100 overflow-hidden">
+    <div className="h-[100dvh] flex flex-col bg-gray-100 overflow-hidden" style={{ paddingBottom: 0 }}>
+
+      {/* ── BANNER sessione scaduta ── */}
+      {meError && (
+        <div className="bg-amber-500 text-white text-xs px-4 py-2 flex items-center justify-between gap-2 shrink-0">
+          <span>⚠️ Sessione ADE scaduta — riconnetti l'estensione Chrome o usa "Incolla cookie"</span>
+          <button onClick={() => setLocation("/login")} className="underline font-semibold whitespace-nowrap">Riconnetti →</button>
+        </div>
+      )}
 
       {/* ── HEADER ── */}
       <header className="bg-[#1e3a5f] text-white px-4 py-2.5 flex items-center justify-between shrink-0 shadow-lg z-20">
@@ -230,10 +245,6 @@ export default function HomePage() {
               <SelectItem value="Annullo">Annullo</SelectItem>
             </SelectContent>
           </Select>
-          <Button variant="ghost" size="sm" className="text-white/70 hover:text-white hover:bg-white/10 h-8 px-2 gap-1.5" onClick={() => setLocation("/admin")}>
-            <Settings className="w-4 h-4" />
-            <span className="text-xs hidden sm:inline">Setting</span>
-          </Button>
           <Button variant="ghost" size="sm" className="text-white/70 hover:text-white hover:bg-white/10 h-8 w-8 p-0" onClick={() => logoutMutation.mutate(undefined, { onSettled: () => setLocation('/login') })}>
             <LogOut className="w-4 h-4" />
           </Button>
@@ -382,6 +393,8 @@ export default function HomePage() {
           onClose={() => setEditIdx(null)}
         />
       )}
+
+      <BottomNav />
     </div>
   );
 }

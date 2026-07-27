@@ -1,10 +1,13 @@
-const AE_DOMAIN = "ivaservizi.agenziaentrate.gov.it";
+const AE_DOMAINS = [
+  "ivaservizi.agenziaentrate.gov.it",
+  "agenziaentrate.gov.it",
+];
 const DEFAULT_APP_URL = "";
 
 const connectBtn = document.getElementById("connectBtn");
-const statusBox = document.getElementById("status");
+const statusBox  = document.getElementById("status");
 const appUrlInput = document.getElementById("appUrl");
-const saveBtn = document.getElementById("saveBtn");
+const saveBtn    = document.getElementById("saveBtn");
 const cookieCountEl = document.getElementById("cookieCount");
 
 function setStatus(type, icon, text) {
@@ -43,35 +46,50 @@ connectBtn.addEventListener("click", async () => {
   setStatus("info", "⏳", "Lettura cookie da ivaservizi...");
 
   try {
-    // Get ALL cookies for the AE domain
-    const cookies = await chrome.cookies.getAll({ domain: AE_DOMAIN });
+    // Raccoglie cookie da tutti i domini AE (anche con punto iniziale)
+    const allCookies = [];
+    const seen = new Set();
 
-    if (!cookies || cookies.length === 0) {
-      setStatus("warning", "⚠️", "Nessun cookie trovato. Apri ivaservizi.agenziaentrate.gov.it, accedi, vai su Documento Commerciale Online e riprova.");
-      setLoading(false);
-      return;
+    for (const domain of AE_DOMAINS) {
+      const list = await chrome.cookies.getAll({ domain });
+      for (const c of list) {
+        const key = `${c.name}=${c.value}`;
+        if (!seen.has(key)) { seen.add(key); allCookies.push(c); }
+      }
     }
 
-    // Check for critical session cookies
-    const hasFATSC = cookies.some(c => c.name === "FATSC");
-    const hasJSESSIONID = cookies.some(c => c.name.startsWith("JSESSIONID") && c.domain.includes("ivaservizi"));
+    // Prova anche con url diretto
+    try {
+      const byUrl = await chrome.cookies.getAll({ url: "https://ivaservizi.agenziaentrate.gov.it" });
+      for (const c of byUrl) {
+        const key = `${c.name}=${c.value}`;
+        if (!seen.has(key)) { seen.add(key); allCookies.push(c); }
+      }
+    } catch (_) {}
 
-    if (!hasFATSC || !hasJSESSIONID) {
+    if (allCookies.length === 0) {
       setStatus("warning", "⚠️",
-        `Sessione incompleta (${hasFATSC ? "✓" : "✗"} FATSC, ${hasJSESSIONID ? "✓" : "✗"} JSESSIONID). ` +
-        `Assicurati di aver aperto la sezione <strong>Documento Commerciale Online</strong> su ivaservizi.`
+        "Nessun cookie trovato. Apri <strong>ivaservizi.agenziaentrate.gov.it</strong>, " +
+        "accedi con Fisconline e torna qui."
       );
       setLoading(false);
       return;
     }
 
-    // Build cookie header string
-    const cookieHeader = cookies
-      .filter(c => c.domain.includes("ivaservizi") || c.domain.includes("agenziaentrate"))
-      .map(c => `${c.name}=${c.value}`)
-      .join("; ");
+    const hasFATSC     = allCookies.some(c => c.name === "FATSC");
+    const hasJSESSION  = allCookies.some(c => c.name.includes("JSESSIONID"));
 
-    cookieCountEl.textContent = `${cookies.length} cookie trovati`;
+    if (!hasFATSC && !hasJSESSION) {
+      setStatus("warning", "⚠️",
+        `Cookie trovati (${allCookies.length}) ma mancano FATSC e JSESSIONID. ` +
+        `Vai su ivaservizi → <strong>Documento Commerciale Online</strong> e riprova.`
+      );
+      setLoading(false);
+      return;
+    }
+
+    const cookieHeader = allCookies.map(c => `${c.name}=${c.value}`).join("; ");
+    if (cookieCountEl) cookieCountEl.textContent = `${allCookies.length} cookie trovati`;
 
     setStatus("info", "⏳", "Invio sessione all'app...");
 
@@ -88,16 +106,16 @@ connectBtn.addEventListener("click", async () => {
       return;
     }
 
-    setStatus("success", "✅", "Connesso! Puoi tornare all'app e iniziare a emettere documenti.");
+    setStatus("success", "✅", "Connesso! Torna all'app per emettere documenti.");
     setLoading(false);
 
   } catch (err) {
-    setStatus("error", "❌", `Errore di rete: ${err.message}. Controlla che l'app sia in esecuzione e l'URL sia corretto.`);
+    setStatus("error", "❌", `Errore: ${err.message}`);
     setLoading(false);
   }
 });
 
-// CSS for spinner
+// CSS spinner
 const style = document.createElement("style");
 style.textContent = `@keyframes spin { to { transform: rotate(360deg); } }`;
 document.head.appendChild(style);

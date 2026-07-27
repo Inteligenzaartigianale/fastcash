@@ -86,6 +86,46 @@ async function aePost(
   return { ok: res.ok, status: res.status, data, headers: res.headers };
 }
 
+// ── Shared: fetch identity from ADE and update session ───────────────────────
+export async function fetchMeAndUpdateSession(cookies: string): Promise<void> {
+  const ts = Date.now();
+  const [meResult, fiscaliResult] = await Promise.all([
+    aeGet(`${AE_COMMON}/info/me?v=${ts}`, cookies),
+    aeGet(`${AE_API}/doc/documenti/dati/fiscali?v=${ts}`, cookies),
+  ]);
+  if (!meResult.ok) return;
+
+  const raw = meResult.data as Record<string, unknown>;
+  const info = (raw.info ?? {}) as Record<string, Record<string, string>>;
+  const utente = (info.utenteAutenticato ?? {}) as Record<string, string>;
+  const lavoro  = (info.utenzaLavoro ?? {}) as Record<string, string>;
+
+  const ragioneSociale = lavoro.denominazione ?? "";
+  const partitaIva     = lavoro.piva ?? lavoro.cf ?? "";
+  const codiceFiscale  = lavoro.cf ?? utente.cf ?? "";
+
+  const fiscali = fiscaliResult.ok
+    ? ((fiscaliResult.data as Record<string, unknown>)?.altriDatiIdentificativi ?? {}) as Record<string, string>
+    : {} as Record<string, string>;
+
+  const session = getSession();
+  if (session) {
+    setSession({
+      ...session,
+      ragioneSociale: ragioneSociale || session.ragioneSociale,
+      partitaIva:     partitaIva     || session.partitaIva,
+      codiceFiscale:  codiceFiscale  || session.codiceFiscale,
+      indirizzo:      fiscali.indirizzo   || session.indirizzo,
+      numeroCivico:   fiscali.numeroCivico ?? session.numeroCivico,
+      cap:            fiscali.cap         || session.cap,
+      comune:         fiscali.comune      || session.comune,
+      provincia:      fiscali.provincia   || session.provincia,
+      defAliquotaIVA: fiscali.defAliquotaIVA || session.defAliquotaIVA,
+    });
+    logger.info({ ragioneSociale, partitaIva, codiceFiscale }, "fetchMeAndUpdateSession: session updated");
+  }
+}
+
 // GET /ae/me
 router.get("/ae/me", async (req, res): Promise<void> => {
   let cookies: string;
@@ -110,9 +150,6 @@ router.get("/ae/me", async (req, res): Promise<void> => {
     return;
   }
 
-  // AE /me response structure:
-  // { info: { utenteAutenticato: { nome, cognome, cf, tipo },
-  //            utenzaLavoro:      { cf, piva, denominazione, tipo } }, links: [...] }
   const raw = meResult.data as Record<string, unknown>;
   const info = (raw.info ?? {}) as Record<string, Record<string, string>>;
   const utente = (info.utenteAutenticato ?? {}) as Record<string, string>;
@@ -122,15 +159,12 @@ router.get("/ae/me", async (req, res): Promise<void> => {
   const partitaIva     = lavoro.piva ?? lavoro.cf ?? "";
   const codiceFiscale  = lavoro.cf ?? utente.cf ?? "";
 
-  // AE /dati/fiscali response:
-  // { altriDatiIdentificativi: { indirizzo, cap, comune, provincia, defAliquotaIVA, ... } }
   const fiscali = fiscaliResult.ok
     ? ((fiscaliResult.data as Record<string, unknown>)?.altriDatiIdentificativi ?? {}) as Record<string, string>
     : {} as Record<string, string>;
 
   const session = getSession();
 
-  // Persist everything to session so buildDcw10Payload can use it
   if (session) {
     setSession({
       ...session,

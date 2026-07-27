@@ -8,6 +8,7 @@ import {
 } from "../lib/session.js";
 import { LoginBody, LoginResponse, GetAuthStatusResponse } from "@workspace/api-zod";
 import { logger } from "../lib/logger.js";
+import { fetchMeAndUpdateSession } from "./ae.js";
 import { randomUUID } from "node:crypto";
 
 const router: IRouter = Router();
@@ -191,6 +192,11 @@ router.post("/auth/cookie", async (req, res): Promise<void> => {
 
   req.log.info({ codiceFiscale, cookieLen: cookieHeader.length }, "Manual cookie session created");
   res.json({ success: true });
+
+  // Fire-and-forget: populate CF/PIVA/indirizzo from ADE so the first document send works
+  fetchMeAndUpdateSession(cookieHeader.trim()).catch((err) => {
+    logger.warn({ err }, "Background fetchMeAndUpdateSession failed (non-fatal)");
+  });
 });
 
 // ── POST /auth/logout ─────────────────────────────────────────────────────────

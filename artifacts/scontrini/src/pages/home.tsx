@@ -63,11 +63,10 @@ export default function HomePage() {
 
   // Catalog from DB
   const { data: catalog } = useQuery({ queryKey: ["catalog"], queryFn: fetchCatalog });
-  const emptyC: Catalog = { reparti: [], categorie: [], articoli: [] };
+  const emptyC: Catalog = { reparti: [], articoli: [] };
 
   // Navigation
   const [repartoId, setRepartoId] = useState<string | null>(null);
-  const [categoriaId, setCategoriaId] = useState<string | null>(null);
 
   // Cart
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -85,19 +84,14 @@ export default function HomePage() {
 
   // Derived catalog (catalog can be undefined while loading)
   const cat = catalog ?? emptyC;
-  const categorieFiltrate = useMemo(() =>
-    cat.categorie.filter(c => !repartoId || c.repartoId === repartoId),
-    [cat.categorie, repartoId]
-  );
 
   const articoliFiltrati = useMemo(() => {
     return cat.articoli.filter(a => {
       if (!a.attivo) return false;
-      if (categoriaId) return a.categoriaId === categoriaId;
-      if (repartoId) return categorieFiltrate.some(c => c.id === a.categoriaId);
+      if (repartoId) return a.repartoId === repartoId;
       return true;
     });
-  }, [cat.articoli, categoriaId, repartoId, categorieFiltrate]);
+  }, [cat.articoli, repartoId]);
 
   const totals = useMemo(() => calcTotals(cart), [cart]);
 
@@ -236,8 +230,9 @@ export default function HomePage() {
               <SelectItem value="Annullo">Annullo</SelectItem>
             </SelectContent>
           </Select>
-          <Button variant="ghost" size="sm" className="text-white/70 hover:text-white hover:bg-white/10 h-8 w-8 p-0" onClick={() => setLocation("/admin")} title="Gestione catalogo">
+          <Button variant="ghost" size="sm" className="text-white/70 hover:text-white hover:bg-white/10 h-8 px-2 gap-1.5" onClick={() => setLocation("/admin")}>
             <Settings className="w-4 h-4" />
+            <span className="text-xs hidden sm:inline">Setting</span>
           </Button>
           <Button variant="ghost" size="sm" className="text-white/70 hover:text-white hover:bg-white/10 h-8 w-8 p-0" onClick={() => logoutMutation.mutate(undefined, { onSettled: () => setLocation('/login') })}>
             <LogOut className="w-4 h-4" />
@@ -254,35 +249,18 @@ export default function HomePage() {
           {/* Reparti */}
           <div className="bg-white border-b px-3 py-2 flex gap-2 overflow-x-auto shrink-0 scrollbar-hide">
             <button
-              onClick={() => { setRepartoId(null); setCategoriaId(null); }}
+              onClick={() => { setRepartoId(null); }}
               className={`shrink-0 px-4 py-1.5 rounded-full text-sm font-medium transition-all ${!repartoId ? 'bg-[#1e3a5f] text-white shadow' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
             >Tutti</button>
             {cat.reparti.map(r => (
               <button
                 key={r.id}
-                onClick={() => { setRepartoId(r.id); setCategoriaId(null); }}
+                onClick={() => { setRepartoId(r.id); }}
                 className={`shrink-0 px-4 py-1.5 rounded-full text-sm font-medium transition-all ${repartoId === r.id ? 'text-white shadow' : 'text-gray-600 hover:opacity-80'}`}
                 style={repartoId === r.id ? { backgroundColor: r.colore } : { backgroundColor: r.colore + "22", color: r.colore }}
               >{r.nome}</button>
             ))}
           </div>
-
-          {/* Categorie */}
-          {categorieFiltrate.length > 0 && (
-            <div className="bg-gray-50 border-b px-3 py-1.5 flex gap-2 overflow-x-auto shrink-0 scrollbar-hide">
-              <button
-                onClick={() => setCategoriaId(null)}
-                className={`shrink-0 px-3 py-1 rounded text-xs font-medium transition-all ${!categoriaId ? 'bg-[#1e3a5f] text-white' : 'bg-white text-gray-500 border hover:bg-gray-100'}`}
-              >Tutte</button>
-              {categorieFiltrate.map(c => (
-                <button
-                  key={c.id}
-                  onClick={() => setCategoriaId(c.id)}
-                  className={`shrink-0 px-3 py-1 rounded text-xs font-medium transition-all ${categoriaId === c.id ? 'bg-[#1e3a5f] text-white' : 'bg-white text-gray-500 border hover:bg-gray-100'}`}
-                >{c.nome}</button>
-              ))}
-            </div>
-          )}
 
           {/* Articoli grid */}
           <div className="flex-1 overflow-y-auto p-3">
@@ -294,7 +272,7 @@ export default function HomePage() {
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
                 {articoliFiltrati.map(art => {
-                  const rep = cat.reparti.find(r => cat.categorie.find(c => c.id === art.categoriaId)?.repartoId === r.id);
+                  const rep = cat.reparti.find(r => r.id === art.repartoId);
                   const colore = rep?.colore ?? "#6b7280";
                   return (
                     <button

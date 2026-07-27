@@ -1,12 +1,11 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   fetchCatalog,
   createReparto, updateReparto, deleteReparto,
-  createCategoria, updateCategoria, deleteCategoria,
   createArticolo, updateArticolo, deleteArticolo,
-  type Reparto, type Categoria, type Articolo, type AliquotaIva,
+  type Reparto, type Articolo, type AliquotaIva,
 } from "@/lib/catalog";
 import { ArrowLeft, Plus, Pencil, Trash2, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -22,16 +21,15 @@ const COLORI = ["#ef4444","#f97316","#eab308","#22c55e","#14b8a6","#3b82f6","#8b
 
 export default function AdminPage() {
   const [, setLocation] = useLocation();
-  const [tab, setTab] = useState<"reparti" | "categorie" | "articoli">("reparti");
+  const [tab, setTab] = useState<"reparti" | "articoli">("reparti");
   const qc = useQueryClient();
   const { data: catalog, isLoading } = useQuery({ queryKey: ["catalog"], queryFn: fetchCatalog });
-
   const invalidate = () => qc.invalidateQueries({ queryKey: ["catalog"] });
 
   if (isLoading || !catalog) {
     return (
       <div className="h-[100dvh] flex items-center justify-center bg-gray-50">
-        <div className="text-gray-400 text-sm">Caricamento catalogo...</div>
+        <div className="text-gray-400 text-sm">Caricamento...</div>
       </div>
     );
   }
@@ -42,11 +40,11 @@ export default function AdminPage() {
         <button onClick={() => setLocation("/")} className="hover:opacity-70 transition-opacity">
           <ArrowLeft className="w-5 h-5" />
         </button>
-        <h1 className="font-bold text-base">Gestione Catalogo</h1>
+        <h1 className="font-bold text-base">⚙️ Impostazioni</h1>
       </header>
 
       <div className="bg-white border-b px-4 flex gap-1 shrink-0">
-        {(["reparti", "categorie", "articoli"] as const).map(t => (
+        {(["reparti", "articoli"] as const).map(t => (
           <button key={t} onClick={() => setTab(t)}
             className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors capitalize ${tab === t ? "border-[#1e3a5f] text-[#1e3a5f]" : "border-transparent text-gray-500 hover:text-gray-700"}`}
           >{t}</button>
@@ -54,16 +52,15 @@ export default function AdminPage() {
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 max-w-2xl w-full mx-auto">
-        {tab === "reparti"   && <RepartiPanel   catalog={catalog} onRefresh={invalidate} />}
-        {tab === "categorie" && <CategoriePanel catalog={catalog} onRefresh={invalidate} />}
-        {tab === "articoli"  && <ArticoliPanel  catalog={catalog} onRefresh={invalidate} />}
+        {tab === "reparti"  && <RepartiPanel  catalog={catalog} onRefresh={invalidate} />}
+        {tab === "articoli" && <ArticoliPanel catalog={catalog} onRefresh={invalidate} />}
       </div>
     </div>
   );
 }
 
 // ── REPARTI ───────────────────────────────────────────────────────────────────
-function RepartiPanel({ catalog, onRefresh }: { catalog: ReturnType<typeof useQuery<Awaited<ReturnType<typeof fetchCatalog>>>>["data"] & object; onRefresh: () => void }) {
+function RepartiPanel({ catalog, onRefresh }: { catalog: { reparti: Reparto[]; articoli: Articolo[] }; onRefresh: () => void }) {
   const [editing, setEditing] = useState<Reparto | null>(null);
   const [showNew, setShowNew] = useState(false);
   const [nome, setNome] = useState("");
@@ -82,23 +79,27 @@ function RepartiPanel({ catalog, onRefresh }: { catalog: ReturnType<typeof useQu
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-gray-500">{(catalog as any).reparti.length} reparti</p>
+        <p className="text-sm text-gray-500">{catalog.reparti.length} reparti</p>
         <Button size="sm" onClick={() => { setShowNew(true); setEditing(null); setNome(""); setColore(COLORI[0]); }} className="bg-[#1e3a5f]">
           <Plus className="w-4 h-4 mr-1" /> Nuovo
         </Button>
       </div>
 
-      {(catalog as any).reparti.map((r: Reparto) => (
+      {catalog.reparti.map((r) => (
         <div key={r.id} className="bg-white rounded-xl border p-3.5 flex items-center gap-3 shadow-sm">
           <div className="w-10 h-10 rounded-full shrink-0 flex items-center justify-center text-white font-bold text-lg" style={{ backgroundColor: r.colore }}>{r.nome[0]}</div>
           <div className="flex-1 min-w-0">
             <p className="font-medium text-gray-800">{r.nome}</p>
-            <p className="text-xs text-gray-400">{(catalog as any).categorie.filter((c: Categoria) => c.repartoId === r.id).length} categorie</p>
+            <p className="text-xs text-gray-400">{catalog.articoli.filter(a => a.repartoId === r.id).length} articoli</p>
           </div>
           <button onClick={() => openEdit(r)} className="text-gray-400 hover:text-blue-500 p-1.5 rounded-lg hover:bg-blue-50"><Pencil className="w-4 h-4" /></button>
-          <button onClick={async () => { if (confirm("Elimina reparto e tutto il contenuto?")) { await deleteReparto(r.id); onRefresh(); } }} className="text-gray-400 hover:text-red-500 p-1.5 rounded-lg hover:bg-red-50"><Trash2 className="w-4 h-4" /></button>
+          <button onClick={async () => { if (confirm("Elimina reparto e tutti gli articoli?")) { await deleteReparto(r.id); onRefresh(); } }} className="text-gray-400 hover:text-red-500 p-1.5 rounded-lg hover:bg-red-50"><Trash2 className="w-4 h-4" /></button>
         </div>
       ))}
+
+      {catalog.reparti.length === 0 && (
+        <p className="text-center text-sm text-gray-400 py-8">Nessun reparto. Creane uno!</p>
+      )}
 
       <Dialog open={showNew || editing !== null} onOpenChange={close}>
         <DialogContent className="max-w-sm">
@@ -106,7 +107,8 @@ function RepartiPanel({ catalog, onRefresh }: { catalog: ReturnType<typeof useQu
           <div className="space-y-4 pt-2">
             <div className="space-y-1.5">
               <Label>Nome reparto</Label>
-              <Input value={nome} onChange={e => setNome(e.target.value)} placeholder="Es. Alimentari" autoFocus />
+              <Input value={nome} onChange={e => setNome(e.target.value)} placeholder="Es. Alimentari" autoFocus
+                onKeyDown={e => e.key === "Enter" && handleSave()} />
             </div>
             <div className="space-y-1.5">
               <Label>Colore</Label>
@@ -129,125 +131,69 @@ function RepartiPanel({ catalog, onRefresh }: { catalog: ReturnType<typeof useQu
   );
 }
 
-// ── CATEGORIE ─────────────────────────────────────────────────────────────────
-function CategoriePanel({ catalog, onRefresh }: { catalog: any; onRefresh: () => void }) {
-  const [editing, setEditing] = useState<Categoria | null>(null);
-  const [showNew, setShowNew] = useState(false);
-  const [nome, setNome] = useState("");
-  const [repartoId, setRepartoId] = useState(catalog.reparti[0]?.id ?? "");
-
-  const openEdit = (c: Categoria) => { setEditing(c); setNome(c.nome); setRepartoId(c.repartoId); };
-  const close = () => { setEditing(null); setShowNew(false); setNome(""); };
-
-  const handleSave = async () => {
-    if (!nome.trim() || !repartoId) return;
-    if (editing) await updateCategoria(editing.id, { nome: nome.trim(), repartoId });
-    else await createCategoria(nome.trim(), repartoId);
-    onRefresh(); close();
-  };
-
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-gray-500">{catalog.categorie.length} categorie</p>
-        <Button size="sm" onClick={() => { setShowNew(true); setEditing(null); setNome(""); setRepartoId(catalog.reparti[0]?.id ?? ""); }} className="bg-[#1e3a5f]">
-          <Plus className="w-4 h-4 mr-1" /> Nuova
-        </Button>
-      </div>
-
-      {catalog.reparti.map((rep: Reparto) => {
-        const cats = catalog.categorie.filter((c: Categoria) => c.repartoId === rep.id);
-        if (cats.length === 0) return null;
-        return (
-          <div key={rep.id}>
-            <p className="text-xs font-semibold uppercase tracking-wider mb-2 px-1" style={{ color: rep.colore }}>{rep.nome}</p>
-            {cats.map((cat: Categoria) => (
-              <div key={cat.id} className="bg-white rounded-xl border p-3.5 flex items-center gap-3 shadow-sm mb-2">
-                <div className="flex-1">
-                  <p className="font-medium text-gray-800">{cat.nome}</p>
-                  <p className="text-xs text-gray-400">{catalog.articoli.filter((a: Articolo) => a.categoriaId === cat.id).length} articoli</p>
-                </div>
-                <button onClick={() => openEdit(cat)} className="text-gray-400 hover:text-blue-500 p-1.5 rounded-lg hover:bg-blue-50"><Pencil className="w-4 h-4" /></button>
-                <button onClick={async () => { if (confirm("Elimina categoria e articoli collegati?")) { await deleteCategoria(cat.id); onRefresh(); } }} className="text-gray-400 hover:text-red-500 p-1.5 rounded-lg hover:bg-red-50"><Trash2 className="w-4 h-4" /></button>
-              </div>
-            ))}
-          </div>
-        );
-      })}
-
-      <Dialog open={showNew || editing !== null} onOpenChange={close}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>{editing ? "Modifica categoria" : "Nuova categoria"}</DialogTitle></DialogHeader>
-          <div className="space-y-4 pt-2">
-            <div className="space-y-1.5">
-              <Label>Nome categoria</Label>
-              <Input value={nome} onChange={e => setNome(e.target.value)} placeholder="Es. Formaggi" autoFocus />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Reparto</Label>
-              <Select value={repartoId} onValueChange={setRepartoId}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>{catalog.reparti.map((r: Reparto) => <SelectItem key={r.id} value={r.id}>{r.nome}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-            <div className="flex gap-2 pt-1">
-              <Button variant="outline" className="flex-1" onClick={close}>Annulla</Button>
-              <Button className="flex-1 bg-[#1e3a5f]" onClick={handleSave}>Salva</Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
-}
-
 // ── ARTICOLI ──────────────────────────────────────────────────────────────────
-function ArticoliPanel({ catalog, onRefresh }: { catalog: any; onRefresh: () => void }) {
+function ArticoliPanel({ catalog, onRefresh }: { catalog: { reparti: Reparto[]; articoli: Articolo[] }; onRefresh: () => void }) {
   const [editing, setEditing] = useState<Articolo | null>(null);
   const [showNew, setShowNew] = useState(false);
-  const [form, setForm] = useState<Omit<Articolo, "id">>({ nome: "", prezzoUnitario: 0, aliquotaIva: "22", categoriaId: catalog.categorie[0]?.id ?? "", attivo: true });
-  const [filterRep, setFilterRep] = useState("tutti");
+  const [filterRep, setFilterRep] = useState<string>("tutti");
+  const [form, setForm] = useState<Omit<Articolo, "id">>({
+    nome: "", prezzoUnitario: 0, aliquotaIva: "22",
+    repartoId: catalog.reparti[0]?.id ?? "", attivo: true,
+  });
 
-  const openNew = () => { setShowNew(true); setEditing(null); setForm({ nome: "", prezzoUnitario: 0, aliquotaIva: "22", categoriaId: catalog.categorie[0]?.id ?? "", attivo: true }); };
-  const openEdit = (a: Articolo) => { setEditing(a); setShowNew(false); setForm({ nome: a.nome, prezzoUnitario: a.prezzoUnitario, aliquotaIva: a.aliquotaIva, categoriaId: a.categoriaId, attivo: a.attivo }); };
+  const openNew = () => {
+    setShowNew(true); setEditing(null);
+    setForm({ nome: "", prezzoUnitario: 0, aliquotaIva: "22", repartoId: catalog.reparti[0]?.id ?? "", attivo: true });
+  };
+  const openEdit = (a: Articolo) => { setEditing(a); setShowNew(false); setForm({ nome: a.nome, prezzoUnitario: a.prezzoUnitario, aliquotaIva: a.aliquotaIva, repartoId: a.repartoId, attivo: a.attivo }); };
   const close = () => { setEditing(null); setShowNew(false); };
 
   const handleSave = async () => {
-    if (!form.nome.trim() || !form.categoriaId) return;
+    if (!form.nome.trim() || !form.repartoId) return;
     if (editing) await updateArticolo(editing.id, form);
     else await createArticolo(form);
     onRefresh(); close();
   };
 
-  const articoliFiltrati = filterRep === "tutti" ? catalog.articoli : catalog.articoli.filter((a: Articolo) => {
-    const cat = catalog.categorie.find((c: Categoria) => c.id === a.categoriaId);
-    return cat?.repartoId === filterRep;
-  });
+  const articoliFiltrati = filterRep === "tutti"
+    ? catalog.articoli
+    : catalog.articoli.filter(a => a.repartoId === filterRep);
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between gap-2">
-        <Select value={filterRep} onValueChange={setFilterRep}>
-          <SelectTrigger className="h-8 text-sm flex-1 max-w-[160px]"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="tutti">Tutti i reparti</SelectItem>
-            {catalog.reparti.map((r: Reparto) => <SelectItem key={r.id} value={r.id}>{r.nome}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        <Button size="sm" onClick={openNew} className="bg-[#1e3a5f] shrink-0"><Plus className="w-4 h-4 mr-1" /> Nuovo</Button>
+      <div className="flex items-center gap-2">
+        {/* Filtro reparto */}
+        <div className="flex gap-2 flex-1 overflow-x-auto pb-0.5">
+          <button
+            onClick={() => setFilterRep("tutti")}
+            className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${filterRep === "tutti" ? "bg-[#1e3a5f] text-white" : "bg-white border text-gray-600 hover:bg-gray-50"}`}
+          >Tutti</button>
+          {catalog.reparti.map(r => (
+            <button
+              key={r.id}
+              onClick={() => setFilterRep(r.id)}
+              className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${filterRep === r.id ? "text-white" : "bg-white border text-gray-600 hover:opacity-80"}`}
+              style={filterRep === r.id ? { backgroundColor: r.colore } : {}}
+            >{r.nome}</button>
+          ))}
+        </div>
+        <Button size="sm" onClick={openNew} className="bg-[#1e3a5f] shrink-0">
+          <Plus className="w-4 h-4 mr-1" /> Nuovo
+        </Button>
       </div>
 
-      {articoliFiltrati.length === 0 && <p className="text-center text-sm text-gray-400 py-8">Nessun articolo. Aggiungine uno!</p>}
+      {articoliFiltrati.length === 0 && (
+        <p className="text-center text-sm text-gray-400 py-8">Nessun articolo. Aggiungine uno!</p>
+      )}
 
-      {articoliFiltrati.map((art: Articolo) => {
-        const cat = catalog.categorie.find((c: Categoria) => c.id === art.categoriaId);
-        const rep = catalog.reparti.find((r: Reparto) => r.id === cat?.repartoId);
+      {articoliFiltrati.map(art => {
+        const rep = catalog.reparti.find(r => r.id === art.repartoId);
         return (
           <div key={art.id} className={`bg-white rounded-xl border p-3.5 flex items-center gap-3 shadow-sm ${!art.attivo ? "opacity-50" : ""}`}>
             <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: rep?.colore ?? "#9ca3af" }} />
             <div className="flex-1 min-w-0">
               <p className="font-medium text-gray-800">{art.nome}</p>
-              <p className="text-xs text-gray-400">{cat?.nome} · IVA {art.aliquotaIva === "Esente" ? "Esente" : art.aliquotaIva === "Non soggette" ? "Non sogg." : art.aliquotaIva + "%"}</p>
+              <p className="text-xs text-gray-400">{rep?.nome} · IVA {art.aliquotaIva === "Esente" ? "Esente" : art.aliquotaIva === "Non soggette" ? "Non sogg." : art.aliquotaIva + "%"}</p>
             </div>
             <p className="font-bold text-gray-800 text-sm font-mono shrink-0">€ {Number(art.prezzoUnitario).toFixed(2)}</p>
             <Switch checked={art.attivo} onCheckedChange={async v => { await updateArticolo(art.id, { attivo: v }); onRefresh(); }} />
@@ -266,17 +212,12 @@ function ArticoliPanel({ catalog, onRefresh }: { catalog: any; onRefresh: () => 
               <Input value={form.nome} onChange={e => setForm(f => ({ ...f, nome: e.target.value }))} placeholder="Es. Pane integrale" autoFocus />
             </div>
             <div className="space-y-1.5">
-              <Label>Categoria</Label>
-              <Select value={form.categoriaId} onValueChange={v => setForm(f => ({ ...f, categoriaId: v }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+              <Label>Reparto</Label>
+              <Select value={form.repartoId} onValueChange={v => setForm(f => ({ ...f, repartoId: v }))}>
+                <SelectTrigger><SelectValue placeholder="Seleziona reparto" /></SelectTrigger>
                 <SelectContent>
-                  {catalog.reparti.map((rep: Reparto) => (
-                    <div key={rep.id}>
-                      <p className="px-2 py-1 text-xs font-semibold text-gray-400 uppercase">{rep.nome}</p>
-                      {catalog.categorie.filter((c: Categoria) => c.repartoId === rep.id).map((c: Categoria) => (
-                        <SelectItem key={c.id} value={c.id}>{c.nome}</SelectItem>
-                      ))}
-                    </div>
+                  {catalog.reparti.map(r => (
+                    <SelectItem key={r.id} value={r.id}>{r.nome}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -290,7 +231,9 @@ function ArticoliPanel({ catalog, onRefresh }: { catalog: any; onRefresh: () => 
                 <Label>Aliquota IVA</Label>
                 <Select value={form.aliquotaIva} onValueChange={v => setForm(f => ({ ...f, aliquotaIva: v as AliquotaIva }))}>
                   <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
-                  <SelectContent>{IVA_OPTIONS.map(o => <SelectItem key={o} value={o}>{o === "Esente" || o === "Non soggette" ? o : `${o}%`}</SelectItem>)}</SelectContent>
+                  <SelectContent>
+                    {IVA_OPTIONS.map(o => <SelectItem key={o} value={o}>{o === "Esente" || o === "Non soggette" ? o : `${o}%`}</SelectItem>)}
+                  </SelectContent>
                 </Select>
               </div>
             </div>

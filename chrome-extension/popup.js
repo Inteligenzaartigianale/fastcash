@@ -93,7 +93,9 @@ connectBtn.addEventListener("click", async () => {
 
     setStatus("info", "⏳", "Invio sessione all'app...");
 
-    const response = await fetch(`${appUrl}/api/auth/cookie`, {
+    // Usa solo origin (es. https://xxx.replit.dev) ignorando eventuali path come /scontrini
+    const origin = (() => { try { return new URL(appUrl).origin; } catch(_) { return appUrl; } })();
+    const response = await fetch(`${origin}/api/auth/cookie`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ cookieHeader }),

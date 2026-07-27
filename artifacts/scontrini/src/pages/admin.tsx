@@ -16,11 +16,14 @@ import { Label } from "@/components/ui/label";
 import { CurrencyInput } from "@/components/currency-input";
 import { Switch } from "@/components/ui/switch";
 
+import { useArticoloSize, SIZES } from "@/lib/articolo-size";
+
 const IVA_OPTIONS: AliquotaIva[] = ["22", "10", "5", "4", "Esente", "Non soggette"];
 const COLORI = ["#ef4444","#f97316","#eab308","#22c55e","#14b8a6","#3b82f6","#8b5cf6","#ec4899","#6b7280","#1e3a5f"];
 
 export default function AdminPage() {
-  const [tab, setTab] = useState<"reparti" | "articoli">("reparti");
+  const [tab, setTab] = useState<"reparti" | "articoli" | "visualizzazione">("reparti");
+  const { size, setSize } = useArticoloSize();
   const qc = useQueryClient();
   const { data: catalog, isLoading } = useQuery({ queryKey: ["catalog"], queryFn: fetchCatalog });
   const invalidate = () => qc.invalidateQueries({ queryKey: ["catalog"] });
@@ -40,7 +43,7 @@ export default function AdminPage() {
       </header>
 
       <div className="bg-white border-b px-4 flex gap-1 shrink-0">
-        {(["reparti", "articoli"] as const).map(t => (
+        {(["reparti", "articoli", "visualizzazione"] as const).map(t => (
           <button key={t} onClick={() => setTab(t)}
             className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors capitalize ${tab === t ? "border-[#1e3a5f] text-[#1e3a5f]" : "border-transparent text-gray-500 hover:text-gray-700"}`}
           >{t}</button>
@@ -50,6 +53,27 @@ export default function AdminPage() {
       <div className="flex-1 overflow-y-auto p-4 max-w-2xl w-full mx-auto">
         {tab === "reparti"  && <RepartiPanel  catalog={catalog} onRefresh={invalidate} />}
         {tab === "articoli" && <ArticoliPanel catalog={catalog} onRefresh={invalidate} />}
+        {tab === "visualizzazione" && (
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-sm font-semibold text-gray-700 mb-3">Dimensione tasti articoli</h2>
+              <div className="flex gap-3 flex-wrap">
+                {SIZES.map(s => (
+                  <button
+                    key={s.label}
+                    onClick={() => setSize(s.label)}
+                    className={`flex flex-col items-center justify-center rounded-xl border-2 font-bold transition-all active:scale-95 ${size === s.label ? "border-[#1e3a5f] bg-[#1e3a5f] text-white" : "border-gray-200 bg-white text-gray-600 hover:border-gray-400"}`}
+                    style={{ width: s.px, height: s.px, fontSize: Math.max(10, s.px / 10) }}
+                  >
+                    <span>{s.label}</span>
+                    <span className="text-[10px] font-normal opacity-70 mt-1">{s.px}px</span>
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-gray-400 mt-3">La dimensione viene salvata automaticamente e applicata alla schermata di vendita.</p>
+            </div>
+          </div>
+        )}
       </div>
 
       <BottomNav />

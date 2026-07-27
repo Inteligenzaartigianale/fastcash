@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 import { useGetMe, useInviaDocumento, useLogout } from "@workspace/api-client-react";
 import { useRequireAuth } from "@/hooks/use-require-auth";
 import { formatCurrency } from "@/lib/utils";
+import { useArticoloSize } from "@/lib/articolo-size";
 import { useToast } from "@/hooks/use-toast";
 import { fetchCatalog, type Catalog, type Articolo, type AliquotaIva } from "@/lib/catalog";
 import { useQuery } from "@tanstack/react-query";
@@ -83,6 +84,7 @@ export default function HomePage() {
 
   // Derived catalog (catalog can be undefined while loading)
   const cat = catalog ?? emptyC;
+  const { px: articoloPx } = useArticoloSize();
 
   const articoliFiltrati = useMemo(() => {
     return cat.articoli.filter(a => {
@@ -289,8 +291,8 @@ export default function HomePage() {
                     <button
                       key={art.id}
                       onClick={() => addToCart(art)}
-                      className="w-[100px] h-[100px] bg-white rounded-xl p-3 text-left shadow-sm border-2 hover:shadow-md active:scale-95 transition-all flex flex-col justify-between shrink-0"
-                      style={{ borderColor: colore + "60", backgroundColor: colore + "0d" }}
+                      className="bg-white rounded-xl p-3 text-left shadow-sm border-2 hover:shadow-md active:scale-95 transition-all flex flex-col justify-between shrink-0"
+                      style={{ width: articoloPx, height: articoloPx, borderColor: colore + "60", backgroundColor: colore + "0d" }}
                     >
                       <p className="text-sm font-semibold text-gray-800 leading-tight line-clamp-3">{art.nome}</p>
                       <div>

@@ -100,7 +100,9 @@ export default function HomePage() {
     if (modoPagamento === "contanti" && importoContanti === 0) setImportoContanti(totals.complessivo);
   }, [totals.complessivo, modoPagamento]);
 
-  const totalePagato = importoContanti + importoElettronic + importoTicket;
+  // Contanti usa sempre il totale esatto — nessun input richiesto
+  const importoContantiEffettivo = modoPagamento === "contanti" ? totals.complessivo : importoContanti;
+  const totalePagato = importoContantiEffettivo + importoElettronic + importoTicket;
   const resto = modoPagamento === "contanti" ? Math.max(0, importoContanti - totals.complessivo) : 0;
 
   // ── Cart actions ──────────────────────────────────────────────────────────
@@ -176,7 +178,7 @@ export default function HomePage() {
           omaggio: i.omaggio,
         })),
         pagamento: {
-          contanti: importoContanti,
+          contanti: importoContantiEffettivo,
           elettronico: importoElettronic,
           ticketRestaurant: importoTicket,
           numeroTicket: nTicket || undefined,
@@ -432,7 +434,8 @@ function CartPanel({ cart, totals, totalePagato, resto, modoPagamento, setModoPa
   onUpdateQty, onRemove, onEdit, onClear, onSubmit, isPending }: CartPanelProps) {
 
   const diff = totals.complessivo - totalePagato;
-  const balanced = Math.abs(diff) < 0.01;
+  // Contanti è sempre bilanciato (usa il totale automaticamente)
+  const balanced = modoPagamento === "contanti" || Math.abs(diff) < 0.01;
 
   return (
     <div className="h-full flex flex-col">
@@ -519,21 +522,7 @@ function CartPanel({ cart, totals, totalePagato, resto, modoPagamento, setModoPa
               ))}
             </div>
 
-            {/* Amount inputs */}
-            {modoPagamento === "contanti" && (
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-500 w-20 shrink-0">Incassato €</span>
-                  <CurrencyInput className="flex-1 h-9 rounded border px-3 text-right font-mono text-sm" value={importoContanti} onChange={setImportoContanti} />
-                </div>
-                {resto > 0 && (
-                  <div className="bg-green-50 border border-green-200 rounded-lg px-3 py-1.5 flex justify-between items-center">
-                    <span className="text-xs text-green-700 font-medium">Resto</span>
-                    <span className="font-mono font-bold text-green-700">€ {formatCurrency(resto)}</span>
-                  </div>
-                )}
-              </div>
-            )}
+            {/* Amount inputs — contanti non richiede inserimento, usa totale automaticamente */}
             {modoPagamento === "elettronico" && (
               <div className="flex items-center gap-2">
                 <span className="text-xs text-gray-500 w-20 shrink-0">Importo €</span>

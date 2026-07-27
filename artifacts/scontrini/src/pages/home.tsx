@@ -261,13 +261,13 @@ export default function HomePage() {
           <div className="bg-white border-b px-3 py-2.5 flex gap-2 overflow-x-auto shrink-0 scrollbar-hide">
             <button
               onClick={() => { setRepartoId(null); }}
-              className={`shrink-0 px-5 py-2 rounded-full text-base font-semibold transition-all ${!repartoId ? 'bg-[#1e3a5f] text-white shadow' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+              className={`shrink-0 w-20 h-20 rounded-xl text-sm font-semibold transition-all flex items-center justify-center text-center leading-tight ${!repartoId ? 'bg-[#1e3a5f] text-white shadow' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
             >Tutti</button>
             {cat.reparti.map(r => (
               <button
                 key={r.id}
                 onClick={() => { setRepartoId(r.id); }}
-                className={`shrink-0 px-5 py-2 rounded-full text-base font-semibold transition-all ${repartoId === r.id ? 'text-white shadow' : 'text-gray-600 hover:opacity-80'}`}
+                className={`shrink-0 w-20 h-20 rounded-xl text-sm font-semibold transition-all flex items-center justify-center text-center leading-tight active:scale-95 ${repartoId === r.id ? 'text-white shadow' : 'text-gray-700 hover:opacity-80'}`}
                 style={repartoId === r.id ? { backgroundColor: r.colore } : { backgroundColor: r.colore + "22", color: r.colore }}
               >{r.nome}</button>
             ))}
@@ -289,13 +289,12 @@ export default function HomePage() {
                     <button
                       key={art.id}
                       onClick={() => addToCart(art)}
-                      className="bg-white rounded-xl p-3 text-left shadow-sm border border-transparent hover:border-current hover:shadow-md active:scale-95 transition-all flex flex-col gap-1 min-h-[80px]"
-                      style={{ borderColor: colore + "40" }}
+                      className="aspect-square bg-white rounded-xl p-3 text-left shadow-sm border-2 hover:shadow-md active:scale-95 transition-all flex flex-col justify-between w-full"
+                      style={{ borderColor: colore + "60", backgroundColor: colore + "0d" }}
                     >
-                      <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: colore }} />
-                      <p className="text-sm font-medium text-gray-800 leading-tight line-clamp-2 flex-1">{art.nome}</p>
-                      <div className="flex items-center justify-between mt-auto">
-                        <p className="text-base font-bold text-gray-900">€ {art.prezzoUnitario.toFixed(2)}</p>
+                      <p className="text-sm font-semibold text-gray-800 leading-tight line-clamp-3">{art.nome}</p>
+                      <div>
+                        <p className="text-lg font-bold text-gray-900">€ {art.prezzoUnitario.toFixed(2)}</p>
                         <span className="text-[10px] text-gray-400 font-mono">{art.aliquotaIva === "Esente" ? "ES" : art.aliquotaIva === "Non soggette" ? "NS" : art.aliquotaIva + "%"}</span>
                       </div>
                     </button>

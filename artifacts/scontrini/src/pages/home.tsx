@@ -100,9 +100,7 @@ export default function HomePage() {
     if (modoPagamento === "contanti" && importoContanti === 0) setImportoContanti(totals.complessivo);
   }, [totals.complessivo, modoPagamento]);
 
-  // Contanti usa sempre il totale esatto — nessun input richiesto
-  const importoContantiEffettivo = modoPagamento === "contanti" ? totals.complessivo : importoContanti;
-  const totalePagato = importoContantiEffettivo + importoElettronic + importoTicket;
+  const totalePagato = importoContanti + importoElettronic + importoTicket;
   const resto = modoPagamento === "contanti" ? Math.max(0, importoContanti - totals.complessivo) : 0;
 
   // ── Cart actions ──────────────────────────────────────────────────────────
@@ -178,7 +176,7 @@ export default function HomePage() {
           omaggio: i.omaggio,
         })),
         pagamento: {
-          contanti: importoContantiEffettivo,
+          contanti: importoContanti,
           elettronico: importoElettronic,
           ticketRestaurant: importoTicket,
           numeroTicket: nTicket || undefined,
@@ -260,16 +258,16 @@ export default function HomePage() {
         <div className="flex-1 flex flex-col overflow-hidden">
 
           {/* Reparti */}
-          <div className="bg-white border-b px-3 py-2 flex gap-2 overflow-x-auto shrink-0 scrollbar-hide">
+          <div className="bg-white border-b px-3 py-2.5 flex gap-2 overflow-x-auto shrink-0 scrollbar-hide">
             <button
               onClick={() => { setRepartoId(null); }}
-              className={`shrink-0 px-4 py-1.5 rounded-full text-sm font-medium transition-all ${!repartoId ? 'bg-[#1e3a5f] text-white shadow' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+              className={`shrink-0 px-5 py-2 rounded-full text-base font-semibold transition-all ${!repartoId ? 'bg-[#1e3a5f] text-white shadow' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
             >Tutti</button>
             {cat.reparti.map(r => (
               <button
                 key={r.id}
                 onClick={() => { setRepartoId(r.id); }}
-                className={`shrink-0 px-4 py-1.5 rounded-full text-sm font-medium transition-all ${repartoId === r.id ? 'text-white shadow' : 'text-gray-600 hover:opacity-80'}`}
+                className={`shrink-0 px-5 py-2 rounded-full text-base font-semibold transition-all ${repartoId === r.id ? 'text-white shadow' : 'text-gray-600 hover:opacity-80'}`}
                 style={repartoId === r.id ? { backgroundColor: r.colore } : { backgroundColor: r.colore + "22", color: r.colore }}
               >{r.nome}</button>
             ))}
@@ -434,8 +432,7 @@ function CartPanel({ cart, totals, totalePagato, resto, modoPagamento, setModoPa
   onUpdateQty, onRemove, onEdit, onClear, onSubmit, isPending }: CartPanelProps) {
 
   const diff = totals.complessivo - totalePagato;
-  // Contanti è sempre bilanciato (usa il totale automaticamente)
-  const balanced = modoPagamento === "contanti" || Math.abs(diff) < 0.01;
+  const balanced = Math.abs(diff) < 0.01;
 
   return (
     <div className="h-full flex flex-col">
@@ -522,7 +519,21 @@ function CartPanel({ cart, totals, totalePagato, resto, modoPagamento, setModoPa
               ))}
             </div>
 
-            {/* Amount inputs — contanti non richiede inserimento, usa totale automaticamente */}
+            {/* Amount inputs */}
+            {modoPagamento === "contanti" && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-500 w-20 shrink-0">Incassato €</span>
+                  <CurrencyInput className="flex-1 h-9 rounded border px-3 text-right font-mono text-sm" value={importoContanti} onChange={setImportoContanti} />
+                </div>
+                {resto > 0 && (
+                  <div className="bg-green-50 border border-green-200 rounded-lg px-3 py-1.5 flex justify-between items-center">
+                    <span className="text-xs text-green-700 font-medium">Resto</span>
+                    <span className="font-mono font-bold text-green-700">€ {formatCurrency(resto)}</span>
+                  </div>
+                )}
+              </div>
+            )}
             {modoPagamento === "elettronico" && (
               <div className="flex items-center gap-2">
                 <span className="text-xs text-gray-500 w-20 shrink-0">Importo €</span>

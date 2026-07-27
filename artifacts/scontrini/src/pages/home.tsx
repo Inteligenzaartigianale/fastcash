@@ -281,7 +281,7 @@ export default function HomePage() {
                 <button onClick={() => setLocation("/admin")} className="text-xs text-blue-500 underline">Aggiungi dal catalogo</button>
               </div>
             ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
+              <div className="flex flex-wrap gap-2">
                 {articoliFiltrati.map(art => {
                   const rep = cat.reparti.find(r => r.id === art.repartoId);
                   const colore = rep?.colore ?? "#6b7280";
@@ -289,7 +289,7 @@ export default function HomePage() {
                     <button
                       key={art.id}
                       onClick={() => addToCart(art)}
-                      className="aspect-square bg-white rounded-xl p-3 text-left shadow-sm border-2 hover:shadow-md active:scale-95 transition-all flex flex-col justify-between w-full"
+                      className="w-[100px] h-[100px] bg-white rounded-xl p-3 text-left shadow-sm border-2 hover:shadow-md active:scale-95 transition-all flex flex-col justify-between shrink-0"
                       style={{ borderColor: colore + "60", backgroundColor: colore + "0d" }}
                     >
                       <p className="text-sm font-semibold text-gray-800 leading-tight line-clamp-3">{art.nome}</p>

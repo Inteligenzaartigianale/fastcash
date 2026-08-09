@@ -191,12 +191,19 @@ router.post("/auth/cookie", async (req, res): Promise<void> => {
   });
 
   req.log.info({ codiceFiscale, cookieLen: cookieHeader.length }, "Manual cookie session created");
-  res.json({ success: true });
+  // Confirm the cookies against ADE before reporting success to the extension.
+  // A 200 here must mean that the session really works, not only that the
+  // cookie string was accepted by our API.
+  const valid = await fetchMeAndUpdateSession(cookieHeader.trim());
+  if (!valid) {
+    clearSession();
+    res.status(401).json({
+      error: "Cookie ADE non validi o sessione scaduta. Accedi a Documento Commerciale Online e riprova.",
+    });
+    return;
+  }
 
-  // Fire-and-forget: populate CF/PIVA/indirizzo from ADE so the first document send works
-  fetchMeAndUpdateSession(cookieHeader.trim()).catch((err) => {
-    logger.warn({ err }, "Background fetchMeAndUpdateSession failed (non-fatal)");
-  });
+  res.json({ success: true });
 });
 
 // ── POST /auth/logout ─────────────────────────────────────────────────────────

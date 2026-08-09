@@ -87,13 +87,13 @@ async function aePost(
 }
 
 // ── Shared: fetch identity from ADE and update session ───────────────────────
-export async function fetchMeAndUpdateSession(cookies: string): Promise<void> {
+export async function fetchMeAndUpdateSession(cookies: string): Promise<boolean> {
   const ts = Date.now();
   const [meResult, fiscaliResult] = await Promise.all([
     aeGet(`${AE_COMMON}/info/me?v=${ts}`, cookies),
     aeGet(`${AE_API}/doc/documenti/dati/fiscali?v=${ts}`, cookies),
   ]);
-  if (!meResult.ok) return;
+  if (!meResult.ok) return false;
 
   const raw = meResult.data as Record<string, unknown>;
   const info = (raw.info ?? {}) as Record<string, Record<string, string>>;
@@ -124,6 +124,7 @@ export async function fetchMeAndUpdateSession(cookies: string): Promise<void> {
     });
     logger.info({ ragioneSociale, partitaIva, codiceFiscale }, "fetchMeAndUpdateSession: session updated");
   }
+  return true;
 }
 
 // GET /ae/me

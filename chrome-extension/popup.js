@@ -35,6 +35,21 @@ saveBtn.addEventListener("click", () => {
   });
 });
 
+async function requestConnection(appUrl) {
+  return await new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage(
+      { type: "SCONTRINI_CONNECT", appUrl },
+      (result) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+        } else {
+          resolve(result || {});
+        }
+      },
+    );
+  });
+}
+
 connectBtn.addEventListener("click", async () => {
   const appUrl = (appUrlInput.value || "").trim().replace(/\/$/, "");
   if (!appUrl) {
@@ -46,68 +61,15 @@ connectBtn.addEventListener("click", async () => {
   setStatus("info", "⏳", "Lettura cookie da ivaservizi...");
 
   try {
-    // Raccoglie cookie da tutti i domini AE (anche con punto iniziale)
-    const allCookies = [];
-    const seen = new Set();
-
-    for (const domain of AE_DOMAINS) {
-      const list = await chrome.cookies.getAll({ domain });
-      for (const c of list) {
-        const key = `${c.name}=${c.value}`;
-        if (!seen.has(key)) { seen.add(key); allCookies.push(c); }
-      }
-    }
-
-    // Prova anche con url diretto
-    try {
-      const byUrl = await chrome.cookies.getAll({ url: "https://ivaservizi.agenziaentrate.gov.it" });
-      for (const c of byUrl) {
-        const key = `${c.name}=${c.value}`;
-        if (!seen.has(key)) { seen.add(key); allCookies.push(c); }
-      }
-    } catch (_) {}
-
-    if (allCookies.length === 0) {
-      setStatus("warning", "⚠️",
-        "Nessun cookie trovato. Apri <strong>ivaservizi.agenziaentrate.gov.it</strong>, " +
-        "accedi con Fisconline e torna qui."
-      );
-      setLoading(false);
-      return;
-    }
-
-    const hasFATSC     = allCookies.some(c => c.name === "FATSC");
-    const hasJSESSION  = allCookies.some(c => c.name.includes("JSESSIONID"));
-
-    if (!hasFATSC && !hasJSESSION) {
-      setStatus("warning", "⚠️",
-        `Cookie trovati (${allCookies.length}) ma mancano FATSC e JSESSIONID. ` +
-        `Vai su ivaservizi → <strong>Documento Commerciale Online</strong> e riprova.`
-      );
-      setLoading(false);
-      return;
-    }
-
-    const cookieHeader = allCookies.map(c => `${c.name}=${c.value}`).join("; ");
-    if (cookieCountEl) cookieCountEl.textContent = `${allCookies.length} cookie trovati`;
-
     setStatus("info", "⏳", "Invio sessione all'app...");
-
-    // Usa solo origin (es. https://xxx.replit.dev) ignorando eventuali path come /scontrini
-    const origin = (() => { try { return new URL(appUrl).origin; } catch(_) { return appUrl; } })();
-    const response = await fetch(`${origin}/api/auth/cookie`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ cookieHeader }),
-    });
-
-    if (!response.ok) {
-      const data = await response.json().catch(() => ({}));
-      setStatus("error", "❌", `Errore dal server: ${data.error || response.status}`);
+    const result = await requestConnection(appUrl);
+    if (!result.success) {
+      setStatus("error", "❌", result.error || "Connessione fallita");
       setLoading(false);
       return;
     }
 
+    if (cookieCountEl) cookieCountEl.textContent = `${result.cookieCount || 0} cookie trovati`;
     setStatus("success", "✅", "Connesso! Torna all'app per emettere documenti.");
     setLoading(false);
 

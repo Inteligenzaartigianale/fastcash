@@ -40,7 +40,10 @@ app.get("/api/download/extension", (_req, res) => {
   // Zip on the fly using archiver
   const { execSync } = require("child_process");
   try {
-    const buf = execSync(`cd ${path.resolve(process.cwd(), "../..")} && zip -r - chrome-extension`, { maxBuffer: 10 * 1024 * 1024 });
+    const buf = execSync(
+      `cd ${path.resolve(process.cwd(), "../..")} && zip -r - chrome-extension -x chrome-extension/scontrini-extension.zip`,
+      { maxBuffer: 10 * 1024 * 1024 },
+    );
     res.send(buf);
   } catch (e) {
     res.status(500).send("Errore generazione ZIP");

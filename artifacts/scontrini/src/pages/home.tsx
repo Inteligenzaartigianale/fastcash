@@ -6,7 +6,7 @@ import { formatCurrency } from "@/lib/utils";
 import { useArticoloSize } from "@/lib/articolo-size";
 import { useToast } from "@/hooks/use-toast";
 import { fetchCatalog, type Catalog, type Articolo, type AliquotaIva } from "@/lib/catalog";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { LogOut, ShoppingCart, Trash2, Plus, Minus, Pencil, Send, ChevronLeft, X } from "lucide-react";
 import { BottomNav } from "@/components/bottom-nav";
 import { Button } from "@/components/ui/button";
@@ -57,9 +57,55 @@ export default function HomePage() {
   const { isAuthenticated, isLoading: authLoading } = useRequireAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const { data: me, isError: meError } = useGetMe({ query: { enabled: !!isAuthenticated } });
+  const queryClient = useQueryClient();
+  const meQuery = useGetMe({
+    query: {
+      enabled: !!isAuthenticated,
+      retry: false,
+      refetchInterval: 60_000,
+      refetchIntervalInBackground: true,
+    },
+  });
+  const { data: me, isError: meError, isFetching: meFetching } = meQuery;
   const logoutMutation = useLogout();
   const inviaMutation = useInviaDocumento();
+  const [extensionConnecting, setExtensionConnecting] = useState(false);
+
+  useEffect(() => {
+    const onExtensionMessage = (event: MessageEvent) => {
+      if (
+        event.source !== window ||
+        event.data?.source !== "scontrini-extension" ||
+        event.data?.type !== "SCONTRINI_CONNECT_RESULT"
+      ) {
+        return;
+      }
+
+      setExtensionConnecting(false);
+      if (event.data.success) {
+        toast({ title: "Estensione connessa", description: "Verifico i cookie ADE..." });
+        queryClient.invalidateQueries({ queryKey: meQuery.queryKey });
+      } else {
+        toast({
+          title: "Connessione non riuscita",
+          description: event.data.error || "Apri ADE e accedi a Documento Commerciale Online.",
+          variant: "destructive",
+        });
+      }
+    };
+
+    window.addEventListener("message", onExtensionMessage);
+    return () => window.removeEventListener("message", onExtensionMessage);
+  }, [meQuery.queryKey, queryClient, toast]);
+
+  const connectExtension = () => {
+    setExtensionConnecting(true);
+    window.postMessage(
+      { source: "scontrini-app", type: "SCONTRINI_CONNECT" },
+      "*",
+    );
+    window.setTimeout(() => setExtensionConnecting(false), 15_000);
+  };
 
   // Catalog from DB
   const { data: catalog } = useQuery({ queryKey: ["catalog"], queryFn: fetchCatalog });
@@ -237,6 +283,30 @@ export default function HomePage() {
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={connectExtension}
+            disabled={extensionConnecting}
+            title={
+              meError
+                ? "Cookie ADE scaduti: clicca per riconnettere l'estensione"
+                : "Cookie ADE validi: clicca per aggiornare la connessione"
+            }
+            className={`flex items-center gap-1.5 h-8 px-2 sm:px-3 rounded-lg text-[10px] sm:text-xs font-semibold border transition-all ${
+              meError
+                ? "bg-red-500 border-red-300 text-white animate-pulse"
+                : meFetching && !me
+                  ? "bg-amber-500 border-amber-300 text-white"
+                  : "bg-green-500 border-green-300 text-white shadow-[0_0_12px_rgba(34,197,94,0.65)]"
+            }`}
+          >
+            <span className="w-2 h-2 rounded-full bg-white" />
+            {extensionConnecting
+              ? "Connessione..."
+              : meError
+                ? "Cookie da cambiare"
+                : "Cookie validi"}
+          </button>
           <Select value={tipoOp} onValueChange={setTipoOp}>
             <SelectTrigger className="h-8 text-xs bg-white/10 border-white/20 text-white w-44 hidden sm:flex">
               <SelectValue />

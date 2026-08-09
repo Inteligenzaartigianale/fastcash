@@ -43,16 +43,6 @@ async function connectToApp(appUrl) {
     throw new Error("Nessun cookie ADE trovato");
   }
 
-  const hasFATSC = cookies.some((cookie) => cookie.name === "FATSC");
-  const hasJSESSION = cookies.some((cookie) =>
-    cookie.name.includes("JSESSIONID"),
-  );
-  if (!hasFATSC && !hasJSESSION) {
-    throw new Error(
-      "Cookie trovati, ma sessione ADE non valida. Apri Documento Commerciale Online e accedi.",
-    );
-  }
-
   const response = await fetch(`${origin}/api/auth/cookie`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

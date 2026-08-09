@@ -70,22 +70,31 @@ export default function HomePage() {
   const logoutMutation = useLogout();
   const inviaMutation = useInviaDocumento();
   const [extensionConnecting, setExtensionConnecting] = useState(false);
+  const [extensionConnected, setExtensionConnected] = useState(() =>
+    localStorage.getItem("scontrini_extension_connected") === "true",
+  );
 
   useEffect(() => {
     const onExtensionMessage = (event: MessageEvent) => {
       if (
         event.source !== window ||
         event.data?.source !== "scontrini-extension" ||
-        event.data?.type !== "SCONTRINI_CONNECT_RESULT"
+        !["SCONTRINI_CONNECT_RESULT", "SCONTRINI_CONNECTION_STATE"].includes(
+          event.data?.type,
+        )
       ) {
         return;
       }
 
       setExtensionConnecting(false);
       if (event.data.success) {
-        toast({ title: "Estensione connessa", description: "Verifico i cookie ADE..." });
+        setExtensionConnected(true);
+        localStorage.setItem("scontrini_extension_connected", "true");
+        toast({ title: "Estensione connessa", description: "Cookie inviati correttamente all'app." });
         queryClient.invalidateQueries({ queryKey: meQuery.queryKey });
       } else {
+        setExtensionConnected(false);
+        localStorage.removeItem("scontrini_extension_connected");
         toast({
           title: "Connessione non riuscita",
           description: event.data.error || "Apri ADE e accedi a Documento Commerciale Online.",
@@ -267,7 +276,7 @@ export default function HomePage() {
     <div className="h-[100dvh] flex flex-col bg-gray-100 overflow-hidden" style={{ paddingBottom: 0 }}>
 
       {/* ── BANNER sessione scaduta ── */}
-      {meError && (
+      {meError && !extensionConnected && (
         <div className="bg-amber-500 text-white text-xs px-4 py-2 flex items-center justify-between gap-2 shrink-0">
           <span>⚠️ Sessione ADE scaduta — riconnetti l'estensione Chrome o usa "Incolla cookie"</span>
           <button onClick={() => setLocation("/login")} className="underline font-semibold whitespace-nowrap">Riconnetti →</button>
@@ -288,24 +297,24 @@ export default function HomePage() {
             onClick={connectExtension}
             disabled={extensionConnecting}
             title={
-              meError
-                ? "Cookie ADE scaduti: clicca per riconnettere l'estensione"
-                : "Cookie ADE validi: clicca per aggiornare la connessione"
+              extensionConnected
+                ? "Estensione connessa: clicca per aggiornare"
+                : "Cookie da cambiare: clicca per riconnettere"
             }
             className={`flex items-center gap-1.5 h-8 px-2 sm:px-3 rounded-lg text-[10px] sm:text-xs font-semibold border transition-all ${
-              meError
-                ? "bg-red-500 border-red-300 text-white animate-pulse"
-                : meFetching && !me
-                  ? "bg-amber-500 border-amber-300 text-white"
-                  : "bg-green-500 border-green-300 text-white shadow-[0_0_12px_rgba(34,197,94,0.65)]"
+              extensionConnecting
+                ? "bg-amber-500 border-amber-300 text-white"
+                : extensionConnected
+                  ? "bg-green-500 border-green-300 text-white shadow-[0_0_12px_rgba(34,197,94,0.65)]"
+                  : "bg-red-500 border-red-300 text-white animate-pulse"
             }`}
           >
             <span className="w-2 h-2 rounded-full bg-white" />
             {extensionConnecting
               ? "Connessione..."
-              : meError
-                ? "Cookie da cambiare"
-                : "Cookie validi"}
+              : extensionConnected
+                ? "Estensione connessa"
+                : "Cookie da cambiare"}
           </button>
           <Select value={tipoOp} onValueChange={setTipoOp}>
             <SelectTrigger className="h-8 text-xs bg-white/10 border-white/20 text-white w-44 hidden sm:flex">

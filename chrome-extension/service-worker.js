@@ -53,13 +53,48 @@ async function connectToApp(appUrl) {
 
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
+    await chrome.storage.local.set({
+      connectionState: "disconnected",
+      connectionError: data.error || `Errore server ${response.status}`,
+    });
     throw new Error(data.error || `Errore server ${response.status}`);
+  }
+
+  await chrome.storage.local.set({
+    connectionState: "connected",
+    connectedAt: Date.now(),
+    connectionError: "",
+    appOrigin: origin,
+  });
+
+  // Aggiorna subito tutte le schede dell'app già aperte.
+  const tabs = await chrome.tabs.query({});
+  for (const tab of tabs) {
+    if (tab.id && tab.url?.startsWith(origin)) {
+      chrome.tabs.sendMessage(tab.id, {
+        type: "SCONTRINI_CONNECTION_STATE",
+        success: true,
+        cookieCount: cookies.length,
+      }).catch(() => {});
+    }
   }
 
   return { success: true, cookieCount: cookies.length };
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type === "SCONTRINI_GET_STATE") {
+    chrome.storage.local.get(
+      ["connectionState", "connectedAt", "connectionError"],
+      (state) => sendResponse({
+        success: state.connectionState === "connected",
+        connectedAt: state.connectedAt || null,
+        error: state.connectionError || "",
+      }),
+    );
+    return true;
+  }
+
   if (message?.type !== "SCONTRINI_CONNECT") return false;
 
   connectToApp(message.appUrl)

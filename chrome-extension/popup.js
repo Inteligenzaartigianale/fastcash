@@ -71,6 +71,19 @@ connectBtn.addEventListener("click", async () => {
 
     if (cookieCountEl) cookieCountEl.textContent = `${result.cookieCount || 0} cookie trovati`;
     setStatus("success", "✅", "Connesso! Torna all'app per emettere documenti.");
+    // Notifica anche direttamente la scheda attiva, nel caso il broadcast
+    // del service worker sia arrivato prima del caricamento del content script.
+    try {
+      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+      const tab = tabs[0];
+      if (tab?.id) {
+        chrome.tabs.sendMessage(tab.id, {
+          type: "SCONTRINI_CONNECTION_STATE",
+          success: true,
+          cookieCount: result.cookieCount,
+        }).catch(() => {});
+      }
+    } catch (_) {}
     setLoading(false);
 
   } catch (err) {

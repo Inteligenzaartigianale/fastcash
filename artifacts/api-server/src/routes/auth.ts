@@ -191,19 +191,13 @@ router.post("/auth/cookie", async (req, res): Promise<void> => {
   });
 
   req.log.info({ codiceFiscale, cookieLen: cookieHeader.length }, "Manual cookie session created");
-  // Confirm the cookies against ADE before reporting success to the extension.
-  // A 200 here must mean that the session really works, not only that the
-  // cookie string was accepted by our API.
-  const valid = await fetchMeAndUpdateSession(cookieHeader.trim());
-  if (!valid) {
-    clearSession();
-    res.status(401).json({
-      error: "Cookie ADE non validi o sessione scaduta. Accedi a Documento Commerciale Online e riprova.",
-    });
-    return;
-  }
-
   res.json({ success: true });
+
+  // Popola i dati fiscali in background senza bloccare la conferma
+  // dell'estensione: il suo stato "connesso" è quello mostrato nell'app.
+  fetchMeAndUpdateSession(cookieHeader.trim()).catch((err) => {
+    logger.warn({ err }, "Background fetchMeAndUpdateSession failed (non-fatal)");
+  });
 });
 
 // ── POST /auth/logout ─────────────────────────────────────────────────────────

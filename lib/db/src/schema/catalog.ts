@@ -27,6 +27,7 @@ export const impostazioniTable = pgTable("impostazioni", {
   importoMassimoDco: numeric("importo_massimo_dco", { precision: 10, scale: 2 }),
   tastieraFissa:    boolean("tastiera_fissa").notNull().default(false),
   mostraTicket:     boolean("mostra_ticket").notNull().default(false),
+  gestioneResto:    boolean("gestione_resto").notNull().default(false),
   dimensioneTasti:  text("dimensione_tasti").notNull().default("S"),
   updatedAt:        timestamp("updated_at").defaultNow().notNull(),
 });

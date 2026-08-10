@@ -299,8 +299,20 @@ router.post("/ae/documenti", async (req, res): Promise<void> => {
     return;
   }
 
+  // Without the optional local "gestione resto" feature, never forward a
+  // received cash amount that is higher than the DCO total to ADE.
+  const inputForAe = maxDcoRow?.gestioneResto
+    ? input
+    : {
+        ...input,
+        pagamento: {
+          ...input.pagamento,
+          contanti: input.pagamento.contanti ? importoDco : 0,
+        },
+      };
+
   // Build DCW10 payload matching AE's format
-  const dcw10Payload = buildDcw10Payload(input, session);
+  const dcw10Payload = buildDcw10Payload(inputForAe, session);
 
   req.log.info({ tipoOperazione: input.tipoOperazione }, "Sending documento to AE");
 
@@ -342,7 +354,7 @@ router.post("/ae/documenti", async (req, res): Promise<void> => {
     totale: importoDco.toFixed(2),
     codiceLotteria: input.codiceLotteria ?? null,
     righe: input.righe,
-    pagamento: input.pagamento,
+    pagamento: inputForAe.pagamento,
   });
 
   const docResult = InviaDocumentoResponse.parse({

@@ -8,7 +8,7 @@ import {
   type Catalog, type Reparto, type Articolo, type AliquotaIva,
   ALIQUOTE_IVA, NATURE_IVA, isNaturaIva,
 } from "@/lib/catalog";
-import { Plus, Pencil, Trash2, Check, Keyboard, Ticket } from "lucide-react";
+import { Plus, Pencil, Trash2, Check, Keyboard, Ticket, Banknote } from "lucide-react";
 import { BottomNav } from "@/components/bottom-nav";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -94,6 +94,7 @@ function GeneraliPanel({ catalog, onRefresh }: { catalog: Catalog; onRefresh: ()
   const [saving, setSaving] = useState(false);
   const tastieraFissa = catalog.impostazioni?.tastieraFissa ?? false;
   const mostraTicket = catalog.impostazioni?.mostraTicket ?? false;
+  const gestioneResto = catalog.impostazioni?.gestioneResto ?? false;
 
   const toggleTastiera = async (checked: boolean) => {
     setSaving(true);
@@ -109,6 +110,16 @@ function GeneraliPanel({ catalog, onRefresh }: { catalog: Catalog; onRefresh: ()
     setSaving(true);
     try {
       await updateImpostazioni({ mostraTicket: checked });
+      onRefresh();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const toggleGestioneResto = async (checked: boolean) => {
+    setSaving(true);
+    try {
+      await updateImpostazioni({ gestioneResto: checked });
       onRefresh();
     } finally {
       setSaving(false);
@@ -149,6 +160,22 @@ function GeneraliPanel({ catalog, onRefresh }: { catalog: Catalog; onRefresh: ()
         </div>
         <Switch checked={mostraTicket} disabled={saving} onCheckedChange={toggleTicket} />
       </div>
+      <div className="bg-white rounded-xl border p-4 shadow-sm flex items-start gap-3">
+        <div className="w-9 h-9 rounded-lg bg-[#1e3a5f]/10 text-[#1e3a5f] flex items-center justify-center shrink-0">
+          <Banknote className="w-4 h-4" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-gray-800">Gestione resto</p>
+          <p className="text-xs text-gray-500 mt-1">
+            Mostra il campo “Incassato” e calcola il resto per i pagamenti in contanti.
+            Se disattivata, al DCO viene inviato solo il totale effettivo del documento.
+          </p>
+        </div>
+        <Switch checked={gestioneResto} disabled={saving} onCheckedChange={toggleGestioneResto} />
+      </div>
+      <p className="text-[11px] text-gray-400">
+        Questa opzione è disattivata di default per mantenere il flusso ADE il più semplice possibile.
+      </p>
     </div>
   );
 }

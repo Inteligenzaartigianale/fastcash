@@ -148,7 +148,7 @@ export default function HomePage() {
   const emptyC: Catalog = {
     reparti: [],
     articoli: [],
-    impostazioni: { importoMassimoDco: null, tastieraFissa: false, mostraTicket: false, dimensioneTasti: "S" },
+    impostazioni: { importoMassimoDco: null, tastieraFissa: false, mostraTicket: false, gestioneResto: false, dimensioneTasti: "S" },
   };
 
   // Navigation
@@ -173,6 +173,7 @@ export default function HomePage() {
   // Derived catalog (catalog can be undefined while loading)
   const cat = catalog ?? emptyC;
   const articoloSize = cat.impostazioni?.dimensioneTasti ?? "S";
+  const gestioneResto = cat.impostazioni?.gestioneResto ?? false;
   const articoloPx = SIZES.find(s => s.label === articoloSize)?.px ?? SIZES[0].px;
 
   const articoliFiltrati = useMemo(() => {
@@ -188,8 +189,10 @@ export default function HomePage() {
   // Auto-fill payment amount when total changes
   useEffect(() => {
     if (modoPagamento === "elettronico") setImportoElettronico(totals.complessivo);
-    if (modoPagamento === "contanti" && importoContanti === 0) setImportoContanti(totals.complessivo);
-  }, [totals.complessivo, modoPagamento]);
+    if (modoPagamento === "contanti" && (!gestioneResto || importoContanti === 0)) {
+      setImportoContanti(totals.complessivo);
+    }
+  }, [gestioneResto, totals.complessivo, modoPagamento]);
 
   useEffect(() => {
     if (modoPagamento === "ticket" && !cat.impostazioni?.mostraTicket) {
@@ -198,30 +201,32 @@ export default function HomePage() {
   }, [cat.impostazioni?.mostraTicket, modoPagamento]);
 
   const totalePagato = modoPagamento === "contanti"
-    ? importoContanti
+    ? (gestioneResto ? importoContanti : totals.complessivo)
     : modoPagamento === "elettronico"
       ? importoElettronic
       : importoTicket;
-  const resto = modoPagamento === "contanti" ? Math.max(0, importoContanti - totals.complessivo) : 0;
+  const resto = gestioneResto && modoPagamento === "contanti"
+    ? Math.max(0, importoContanti - totals.complessivo)
+    : 0;
 
   const selectPaymentMode = useCallback((mode: "contanti" | "elettronico" | "ticket") => {
     setModoPagamento(mode);
-    if (mode === "contanti" && cart.length > 0) {
+    if (gestioneResto && mode === "contanti" && cart.length > 0) {
       const amount = Number(fixedAmountText.replace(",", "."));
       if (Number.isFinite(amount) && amount > 0) {
         setImportoContanti(Math.round(amount * 100) / 100);
         setFixedAmountText("");
       }
     }
-  }, [cart.length, fixedAmountText]);
+  }, [cart.length, fixedAmountText, gestioneResto]);
 
   const handleFixedAmountTextChange = useCallback((value: string) => {
     setFixedAmountText(value);
-    if (cart.length > 0 && modoPagamento === "contanti") {
+    if (gestioneResto && cart.length > 0 && modoPagamento === "contanti") {
       const amount = Number(value.replace(",", "."));
       setImportoContanti(Number.isFinite(amount) && amount > 0 ? Math.round(amount * 100) / 100 : 0);
     }
-  }, [cart.length, modoPagamento]);
+  }, [cart.length, gestioneResto, modoPagamento]);
 
   // ── Cart actions ──────────────────────────────────────────────────────────
 
@@ -341,7 +346,9 @@ export default function HomePage() {
           omaggio: i.omaggio,
         })),
         pagamento: {
-          contanti: modoPagamento === "contanti" ? importoContanti : 0,
+          contanti: modoPagamento === "contanti"
+            ? (gestioneResto ? importoContanti : totals.complessivo)
+            : 0,
           elettronico: modoPagamento === "elettronico" ? importoElettronic : 0,
           ticketRestaurant: modoPagamento === "ticket" ? importoTicket : 0,
           numeroTicket: modoPagamento === "ticket" ? (nTicket || undefined) : undefined,
@@ -585,6 +592,7 @@ export default function HomePage() {
             fixedAmountText={fixedAmountText}
             onFixedAmountTextChange={handleFixedAmountTextChange}
             mostraTicket={cat.impostazioni?.mostraTicket ?? false}
+            gestioneResto={gestioneResto}
             onOpenFreeAmount={() => setShowFreeAmount(true)}
             onSaveFreeAmount={addFreeAmount}
             onOpenHistory={() => setLocation("/storico")}
@@ -642,6 +650,7 @@ export default function HomePage() {
               fixedAmountText={fixedAmountText}
               onFixedAmountTextChange={handleFixedAmountTextChange}
               mostraTicket={cat.impostazioni?.mostraTicket ?? false}
+              gestioneResto={gestioneResto}
               onOpenFreeAmount={() => setShowFreeAmount(true)}
               onSaveFreeAmount={addFreeAmount}
               onOpenHistory={() => setLocation("/storico")}
@@ -702,6 +711,7 @@ interface CartPanelProps {
   fixedAmountText: string;
   onFixedAmountTextChange: (value: string) => void;
   mostraTicket: boolean;
+  gestioneResto: boolean;
   onOpenFreeAmount: () => void;
   onSaveFreeAmount: (amount: number, repartoId: string, aliquotaIva: AliquotaIva) => void;
   onOpenHistory: () => void;
@@ -711,7 +721,7 @@ function CartPanel({ cart, totals, totalePagato, resto, modoPagamento, setModoPa
   importoContanti, setImportoContanti, importoElettronico, setImportoElettronico,
   importoTicket, setImportoTicket, nTicket, setNTicket, lotteria, setLotteria,
   onUpdateQty, onRemove, onEdit, onClear, onSubmit, isPending, reparti, tastieraFissa,
-  fixedAmountText, onFixedAmountTextChange, mostraTicket, onOpenFreeAmount, onSaveFreeAmount, onOpenHistory }: CartPanelProps) {
+  fixedAmountText, onFixedAmountTextChange, mostraTicket, gestioneResto, onOpenFreeAmount, onSaveFreeAmount, onOpenHistory }: CartPanelProps) {
 
   const diff = totals.complessivo - totalePagato;
   const balanced = Math.abs(diff) < 0.01;
@@ -797,11 +807,11 @@ function CartPanel({ cart, totals, totalePagato, resto, modoPagamento, setModoPa
         )}
       </div>
 
-      {tastieraFissa ? (
+      {tastieraFissa && (cart.length === 0 || gestioneResto) ? (
         <FreeAmountKeyboard
           amountText={fixedAmountText}
           onAmountTextChange={onFixedAmountTextChange}
-          isPaymentEntry={cart.length > 0}
+          isPaymentEntry={gestioneResto && cart.length > 0}
         />
       ) : (
         <button
@@ -847,14 +857,22 @@ function CartPanel({ cart, totals, totalePagato, resto, modoPagamento, setModoPa
             {/* Amount inputs */}
             {modoPagamento === "contanti" && (
               <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-500 w-20 shrink-0">Incassato €</span>
-                  <CurrencyInput className="flex-1 h-11 md:h-10 rounded-lg border px-3 text-right font-mono text-base" value={importoContanti} onChange={setImportoContanti} />
-                </div>
-                {importoContanti > 0 && resto >= 0 && (
-                <div className="bg-green-50 border border-green-200 rounded-lg px-3 py-2 flex justify-between items-center">
-                    <span className="text-sm text-green-700 font-medium">Resto</span>
-                    <span className="font-mono text-base font-bold text-green-700">€ {formatCurrency(resto)}</span>
+                {gestioneResto ? (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-500 w-20 shrink-0">Incassato €</span>
+                      <CurrencyInput className="flex-1 h-11 md:h-10 rounded-lg border px-3 text-right font-mono text-base" value={importoContanti} onChange={setImportoContanti} />
+                    </div>
+                    {importoContanti > 0 && resto >= 0 && (
+                      <div className="bg-green-50 border border-green-200 rounded-lg px-3 py-2 flex justify-between items-center">
+                        <span className="text-sm text-green-700 font-medium">Resto</span>
+                        <span className="font-mono text-base font-bold text-green-700">€ {formatCurrency(resto)}</span>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+                    Contanti: verrà inviato ad ADE il totale esatto del documento (€ {formatCurrency(totals.complessivo)}).
                   </div>
                 )}
               </div>

@@ -24,6 +24,7 @@ router.get("/catalog", async (_req, res): Promise<void> => {
     importoMassimoDco: null,
     tastieraFissa: false,
     mostraTicket: false,
+    gestioneResto: false,
     dimensioneTasti: "S",
   };
   res.json({
@@ -37,6 +38,7 @@ router.get("/catalog", async (_req, res): Promise<void> => {
       importoMassimoDco: settings.importoMassimoDco == null ? null : parseFloat(settings.importoMassimoDco),
       tastieraFissa: settings.tastieraFissa,
       mostraTicket: settings.mostraTicket,
+      gestioneResto: settings.gestioneResto,
       dimensioneTasti: settings.dimensioneTasti,
     },
   });
@@ -47,6 +49,7 @@ router.put("/catalog/impostazioni", async (req, res): Promise<void> => {
   const value = raw === null || raw === "" || raw === undefined ? null : Number(raw);
   const tastieraFissa = req.body?.tastieraFissa;
   const mostraTicket = req.body?.mostraTicket;
+  const gestioneResto = req.body?.gestioneResto;
   const dimensioneTasti = req.body?.dimensioneTasti;
   if (value !== null && (!Number.isFinite(value) || value < 0)) {
     res.status(400).json({ error: "L'importo massimo deve essere un numero positivo o vuoto" });
@@ -58,6 +61,10 @@ router.put("/catalog/impostazioni", async (req, res): Promise<void> => {
   }
   if (mostraTicket !== undefined && typeof mostraTicket !== "boolean") {
     res.status(400).json({ error: "Il valore della visualizzazione Ticket non è valido" });
+    return;
+  }
+  if (gestioneResto !== undefined && typeof gestioneResto !== "boolean") {
+    res.status(400).json({ error: "Il valore della gestione resto non è valido" });
     return;
   }
   if (dimensioneTasti !== undefined && !["S", "M", "L", "XL", "XXL"].includes(dimensioneTasti)) {
@@ -72,6 +79,7 @@ router.put("/catalog/impostazioni", async (req, res): Promise<void> => {
       importoMassimoDco: value === null ? null : value.toFixed(2),
       tastieraFissa: tastieraFissa ?? false,
       mostraTicket: mostraTicket ?? false,
+      gestioneResto: gestioneResto ?? false,
       dimensioneTasti: dimensioneTasti ?? "S",
     })
     .onConflictDoUpdate({
@@ -82,6 +90,7 @@ router.put("/catalog/impostazioni", async (req, res): Promise<void> => {
           : {}),
         ...(tastieraFissa !== undefined ? { tastieraFissa } : {}),
         ...(mostraTicket !== undefined ? { mostraTicket } : {}),
+        ...(gestioneResto !== undefined ? { gestioneResto } : {}),
         ...(dimensioneTasti !== undefined ? { dimensioneTasti } : {}),
         updatedAt: new Date(),
       },
@@ -91,6 +100,7 @@ router.put("/catalog/impostazioni", async (req, res): Promise<void> => {
     importoMassimoDco: row.importoMassimoDco == null ? null : parseFloat(row.importoMassimoDco),
     tastieraFissa: row.tastieraFissa,
     mostraTicket: row.mostraTicket,
+    gestioneResto: row.gestioneResto,
     dimensioneTasti: row.dimensioneTasti,
   });
 });

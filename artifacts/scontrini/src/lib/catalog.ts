@@ -56,6 +56,7 @@ export interface Impostazioni {
   importoMassimoDco: number | null;
   tastieraFissa: boolean;
   mostraTicket: boolean;
+  gestioneResto: boolean;
   dimensioneTasti: "S" | "M" | "L" | "XL" | "XXL";
 }
 

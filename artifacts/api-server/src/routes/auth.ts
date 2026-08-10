@@ -119,14 +119,26 @@ router.get("/auth/login/poll/:jobId", (req, res): void => {
     // Return the error and clean up
     loginJobs.delete(jobId);
     const message = job.error ?? "Login failed";
+    const lowerMessage = message.toLowerCase();
     const isCredErr =
-      message.toLowerCase().includes("credenziali") ||
-      message.toLowerCase().includes("password") ||
-      message.toLowerCase().includes("pin");
+      (lowerMessage.includes("credenziali") ||
+        lowerMessage.includes("password") ||
+        lowerMessage.includes("pin")) &&
+      !lowerMessage.includes("dco") &&
+      !lowerMessage.includes("non autorizzato") &&
+      !lowerMessage.includes("servizio");
+    const isDcoAuthorizationError =
+      lowerMessage.includes("dco") ||
+      lowerMessage.includes("non autorizzato") ||
+      lowerMessage.includes("servizio documenti commerciali");
 
-    res.status(isCredErr ? 401 : 500).json({
+    res.status(isCredErr ? 401 : isDcoAuthorizationError ? 403 : 500).json({
       status: "error",
-      error: isCredErr ? "Credenziali non valide" : "Errore durante il login. Riprova tra qualche secondo.",
+      error: isCredErr
+        ? "Credenziali non valide"
+        : isDcoAuthorizationError
+          ? "Accesso ADE riuscito, ma il servizio DCO non è autorizzato"
+          : "Errore durante il login. Riprova tra qualche secondo.",
       details: message,
     });
     return;
@@ -146,7 +158,21 @@ router.get("/auth/login/poll/:jobId", (req, res): void => {
 // ── GET /auth/status ──────────────────────────────────────────────────────────
 router.get("/auth/status", async (req, res): Promise<void> => {
   const session = getSession();
-  const authenticated = isSessionValid();
+  let authenticated = isSessionValid();
+
+  // A locally stored session can be younger than four hours while ADE has
+  // already invalidated its cookies.  The POS must never treat that state as
+  // logged in, otherwise the user reaches the checkout and only then sees a
+  // misleading DCO error.
+  if (authenticated && session) {
+    try {
+      authenticated = await validateDcoCookies(session.cookies);
+      if (!authenticated) clearSession();
+    } catch (err) {
+      req.log.warn({ err }, "Unable to validate ADE session status");
+      authenticated = false;
+    }
+  }
 
   const result = GetAuthStatusResponse.parse({
     authenticated,

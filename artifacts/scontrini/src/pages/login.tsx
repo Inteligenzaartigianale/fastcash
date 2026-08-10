@@ -49,8 +49,11 @@ async function loginWithCookies(codiceFiscale: string, cookieHeader: string): Pr
     body: JSON.stringify({ codiceFiscale, cookieHeader }),
   });
   if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error((data as { error?: string }).error ?? "Errore nell'invio dei cookie");
+    const data = await res.json().catch(() => ({})) as { error?: string; details?: string };
+    throw Object.assign(
+      new Error(data.error ?? "Errore nell'invio dei cookie"),
+      { details: data.details },
+    );
   }
 }
 
@@ -127,7 +130,24 @@ export default function LoginPage() {
           if (result.status === "success") {
             setLocation("/");
           } else {
-            toast({ title: "Accesso negato", description: result.error ?? "Credenziali non valide o errore di sistema.", variant: "destructive" });
+            const dcoNotAuthorized =
+              result.error?.toLowerCase().includes("dco") ||
+              result.error?.toLowerCase().includes("non autorizzato") ||
+              result.details?.toLowerCase().includes("servizio documenti");
+            if (dcoNotAuthorized) {
+              setMode("cookie");
+              toast({
+                title: "DCO non autorizzato con accesso automatico",
+                description: "L’autenticazione ADE è riuscita, ma il portale non ha aperto il servizio DCO. Apri il DCO in Chrome e usa l’estensione per collegare la sessione.",
+                variant: "destructive",
+              });
+            } else {
+              toast({
+                title: result.status === "error" && result.error === "Credenziali non valide" ? "Credenziali non valide" : "Errore login",
+                description: result.details || result.error || "Errore durante il login.",
+                variant: "destructive",
+              });
+            }
           }
         } catch {
           clearInterval(msgInterval);
@@ -162,7 +182,12 @@ export default function LoginPage() {
       await loginWithCookies(cfCookie.trim(), cookieHeader.trim());
       setLocation("/");
     } catch (err) {
-      toast({ title: "Errore", description: (err as Error).message ?? "Impossibile usare i cookie inseriti.", variant: "destructive" });
+      const cookieError = err as Error & { details?: string };
+      toast({
+        title: "Sessione ADE non collegata",
+        description: cookieError.details || cookieError.message || "Impossibile usare i cookie inseriti.",
+        variant: "destructive",
+      });
     } finally {
       setIsCookiePending(false);
     }

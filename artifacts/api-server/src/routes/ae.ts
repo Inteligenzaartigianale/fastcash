@@ -432,10 +432,11 @@ router.post("/documenti/:id/annulla", async (req, res): Promise<void> => {
     codiceLotteria: originale.codiceLotteria ?? undefined,
     resoAnnullo: {
       tipologia: "A" as const,
-      matricolaDispositivoEmittente: originale.numeroProgressivo.split("/")[0] ?? "ND",
-      dataOra: originale.dataOraEmissione
-        ? new Date(originale.dataOraEmissione).toISOString().slice(0, 19)
-        : originale.createdAt.toISOString().slice(0, 19),
+      dataOra: formatDateForDco(
+        originale.dataOraEmissione
+          ? new Date(originale.dataOraEmissione)
+          : originale.createdAt,
+      ),
       progressivo: originale.numeroProgressivo.includes("/")
         ? originale.numeroProgressivo.split("/").pop() ?? originale.numeroProgressivo
         : originale.numeroProgressivo,
@@ -561,6 +562,12 @@ function todayDDMMYYYY(): string {
   return `${dd}/${mm}/${d.getFullYear()}`;
 }
 
+function formatDateForDco(date: Date): string {
+  const dd = String(date.getDate()).padStart(2, "0");
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  return `${dd}/${mm}/${date.getFullYear()}`;
+}
+
 function buildDcw10Payload(
   input: {
     tipoOperazione: string;
@@ -589,7 +596,6 @@ function buildDcw10Payload(
     };
     resoAnnullo?: {
       tipologia: "R" | "A";
-      matricolaDispositivoEmittente: string;
       dataOra: string;
       progressivo: string;
     };

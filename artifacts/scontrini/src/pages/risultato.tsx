@@ -143,7 +143,9 @@ export default function RisultatoPage() {
             </div>
           </CardContent>
           <CardFooter className="flex flex-col gap-3 border-t bg-muted/20 pt-6">
-            {archivedDocument.tipoOperazione !== "Annullo" && archivedDocument.stato !== "Annullato" && (
+            {archivedDocument.tipoOperazione !== "Annullo" &&
+              archivedDocument.tipoOperazione !== "Reso" &&
+              archivedDocument.stato !== "Annullato" && (
               <Button
                 variant="outline"
                 className="w-full border-red-200 text-red-700 hover:bg-red-50"

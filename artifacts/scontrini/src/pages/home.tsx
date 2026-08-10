@@ -168,6 +168,7 @@ export default function HomePage() {
   const [importoTicket, setImportoTicket] = useState(0);
   const [nTicket, setNTicket] = useState("");
   const [tipoOp, setTipoOp] = useState("Vendita/Prestazione");
+  const [resoProgressivo, setResoProgressivo] = useState("");
   const [lotteria, setLotteria] = useState("");
   const [emissioneRiuscita, setEmissioneRiuscita] = useState<{
     numeroDocumento: string;
@@ -207,8 +208,15 @@ export default function HomePage() {
   }, [cat.impostazioni?.mostraTicket, modoPagamento]);
 
   useEffect(() => {
-    if (!mostraTipoOperazione) setTipoOp("Vendita/Prestazione");
+    if (!mostraTipoOperazione) {
+      setTipoOp("Vendita/Prestazione");
+      setResoProgressivo("");
+    }
   }, [mostraTipoOperazione]);
+
+  useEffect(() => {
+    if (tipoOp !== "Reso") setResoProgressivo("");
+  }, [tipoOp]);
 
   const totalePagato = modoPagamento === "contanti"
     ? (gestioneResto ? importoContanti : totals.complessivo)
@@ -327,6 +335,22 @@ export default function HomePage() {
       toast({ title: "Carrello vuoto", description: "Aggiungi almeno un articolo", variant: "destructive" });
       return;
     }
+    if (tipoOp === "Annullo") {
+      toast({
+        title: "Annullo non disponibile in cassa",
+        description: "Per annullare un documento usa il pulsante nel dettaglio dello storico.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (tipoOp === "Reso" && !resoProgressivo.trim()) {
+      toast({
+        title: "Documento originario mancante",
+        description: "Inserisci il progressivo del documento commerciale da rendere.",
+        variant: "destructive",
+      });
+      return;
+    }
     const diff = Math.abs(totals.complessivo - totalePagato);
     if (diff > 0.01) {
       toast({ title: "Pagamento non quadra", description: `Mancano € ${formatCurrency(totals.complessivo - totalePagato)}`, variant: "destructive" });
@@ -363,7 +387,7 @@ export default function HomePage() {
           ticketRestaurant: modoPagamento === "ticket" ? importoTicket : 0,
           numeroTicket: modoPagamento === "ticket" ? (nTicket || undefined) : undefined,
           scontoAPagare: 0,
-          documentoCollegato: "",
+          documentoCollegato: tipoOp === "Reso" ? resoProgressivo.trim() : "",
         },
       }
     }, {
@@ -506,6 +530,27 @@ export default function HomePage() {
           </Button>
         </div>
       </header>
+
+      {mostraTipoOperazione && tipoOp === "Reso" && (
+        <div className="border-b border-amber-200 bg-amber-50 px-4 py-2.5">
+          <div className="mx-auto flex w-full max-w-5xl flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
+            <label htmlFor="reso-progressivo" className="shrink-0 text-xs font-semibold text-amber-900">
+              Documento originario
+            </label>
+            <Input
+              id="reso-progressivo"
+              value={resoProgressivo}
+              onChange={(event) => setResoProgressivo(event.target.value.toUpperCase())}
+              placeholder="Es. DCW2026/2255-2524"
+              className="h-8 max-w-md bg-white text-xs font-mono"
+              aria-describedby="reso-progressivo-help"
+            />
+            <span id="reso-progressivo-help" className="text-[11px] text-amber-800">
+              Inserisci il progressivo completo del documento da rendere.
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* ── MAIN ── */}
       <div className="flex-1 flex overflow-hidden">

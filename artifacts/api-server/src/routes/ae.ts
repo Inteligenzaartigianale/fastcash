@@ -311,8 +311,70 @@ router.post("/ae/documenti", async (req, res): Promise<void> => {
         },
       };
 
+  if (input.tipoOperazione === "Annullo") {
+    res.status(400).json({
+      error: "L'annullo si esegue dal dettaglio del documento nello storico.",
+    });
+    return;
+  }
+
+  let resoAnnullo: {
+    tipologia: "R";
+    dataOra: string;
+    progressivo: string;
+  } | undefined;
+
+  if (input.tipoOperazione === "Reso") {
+    const progressivoOriginario = input.pagamento.documentoCollegato?.trim();
+    if (!progressivoOriginario) {
+      res.status(400).json({
+        error: "Per il Reso è obbligatorio il progressivo del documento originario.",
+      });
+      return;
+    }
+
+    const [originario] = await db
+      .select()
+      .from(documentiTable)
+      .where(eq(documentiTable.numeroProgressivo, progressivoOriginario));
+
+    if (!originario) {
+      res.status(404).json({
+        error: "Documento originario non trovato nello storico.",
+        details: "Il Reso può essere emesso solo indicando un documento commerciale già presente nello storico.",
+      });
+      return;
+    }
+    if (originario.tipoOperazione !== "Vendita/Prestazione" || originario.stato === "Annullato") {
+      res.status(409).json({
+        error: "Il documento indicato non è rendibile.",
+        details: "È possibile rendere solo un documento Vendita/Prestazione ancora emesso.",
+      });
+      return;
+    }
+    if (!originario.numeroProgressivo) {
+      res.status(409).json({
+        error: "Il documento originario non ha un progressivo ADE valido.",
+      });
+      return;
+    }
+
+    resoAnnullo = {
+      tipologia: "R",
+      dataOra: formatDateForDco(
+        originario.dataOraEmissione
+          ? new Date(originario.dataOraEmissione)
+          : originario.createdAt,
+      ),
+      progressivo: originario.numeroProgressivo,
+    };
+  }
+
   // Build DCW10 payload matching AE's format
-  const dcw10Payload = buildDcw10Payload(inputForAe, session);
+  const dcw10Payload = buildDcw10Payload(
+    resoAnnullo ? { ...inputForAe, resoAnnullo } : inputForAe,
+    session,
+  );
 
   req.log.info({ tipoOperazione: input.tipoOperazione }, "Sending documento to AE");
 
@@ -618,6 +680,7 @@ function buildDcw10Payload(
   },
 ) {
   // ── Per-line calculations ──────────────────────────────────────────────────
+  const isReso = input.resoAnnullo?.tipologia === "R";
   const elementiContabili = input.righe.map((r) => {
     const legacyNatura = r.aliquotaIva === "Esente"
       ? "N4"
@@ -642,7 +705,7 @@ function buildDcw10Payload(
     return {
       idElementoContabile: "",
       resiPregressi: fmt2(0),
-      reso: fmt2(0),
+      reso: fmt2(isReso ? r.quantita : 0),
       quantita: fmt2(r.quantita),
       descrizioneProdotto: r.descrizione,
       prezzoLordo: fmt8(prezzoLordo),

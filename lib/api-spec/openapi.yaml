@@ -73,6 +73,19 @@ paths:
               schema:
                 $ref: "#/components/schemas/AuthStatus"
 
+  /ae/status:
+    get:
+      operationId: getAeStatus
+      tags: [documenti]
+      summary: Verifica la sessione sul servizio DCO di ADE
+      responses:
+        "200":
+          description: Stato della sessione ADE
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AeSessionStatus"
+
   /auth/logout:
     post:
       operationId: logout
@@ -278,6 +291,27 @@ components:
         expiresAt:
           type: ["string", "null"]
           format: date-time
+
+    AeSessionStatus:
+      type: object
+      required: [connected, httpStatus, service, message]
+      properties:
+        connected:
+          type: boolean
+        httpStatus:
+          type: integer
+        service:
+          type: string
+        message:
+          type: string
+        ragioneSociale:
+          type: string
+        partitaIva:
+          type: string
+        codiceFiscale:
+          type: string
+        details:
+          type: string
 
     UtenteInfo:
       type: object

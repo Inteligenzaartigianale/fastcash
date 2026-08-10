@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { useLocation } from "wouter";
-import { useGetMe, useInviaDocumento, useLogout } from "@workspace/api-client-react";
+import { useGetAeStatus, useGetMe, useInviaDocumento, useLogout } from "@workspace/api-client-react";
 import { useRequireAuth } from "@/hooks/use-require-auth";
 import { formatCurrency } from "@/lib/utils";
 import { SIZES } from "@/lib/articolo-size";
@@ -15,7 +15,7 @@ import {
   normalizeAliquotaIva,
 } from "@/lib/catalog";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { LogOut, ShoppingCart, Trash2, Plus, Minus, Pencil, Send, ChevronLeft, X, Delete, Calculator, ReceiptText, History } from "lucide-react";
+import { LogOut, ShoppingCart, Trash2, Plus, Minus, Pencil, Send, ChevronLeft, X, Delete, Calculator, ReceiptText, History, RefreshCw, CheckCircle2, XCircle } from "lucide-react";
 import { BottomNav } from "@/components/bottom-nav";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -75,7 +75,16 @@ export default function HomePage() {
       refetchIntervalInBackground: true,
     },
   });
+  const aeStatusQuery = useGetAeStatus({
+    query: {
+      enabled: !!isAuthenticated,
+      retry: false,
+      refetchInterval: 60_000,
+      refetchIntervalInBackground: true,
+    },
+  });
   const { data: me, isError: meError, isFetching: meFetching } = meQuery;
+  const aeStatus = aeStatusQuery.data;
   const logoutMutation = useLogout();
   const inviaMutation = useInviaDocumento();
   const [extensionConnecting, setExtensionConnecting] = useState(false);
@@ -110,6 +119,7 @@ export default function HomePage() {
         setExtensionConnected(true);
         toast({ title: "Estensione connessa", description: "Cookie inviati correttamente all'app." });
         queryClient.invalidateQueries({ queryKey: meQuery.queryKey });
+        queryClient.invalidateQueries({ queryKey: aeStatusQuery.queryKey });
       } else {
         setExtensionConnected(false);
         toast({
@@ -122,7 +132,7 @@ export default function HomePage() {
 
     window.addEventListener("message", onExtensionMessage);
     return () => window.removeEventListener("message", onExtensionMessage);
-  }, [meQuery.queryKey, queryClient, toast]);
+  }, [aeStatusQuery.queryKey, meQuery.queryKey, queryClient, toast]);
 
   const connectExtension = () => {
     setExtensionConnecting(true);
@@ -375,6 +385,53 @@ export default function HomePage() {
         <div className="bg-amber-500 text-white text-xs px-4 py-2 flex items-center justify-between gap-2 shrink-0">
           <span>⚠️ Sessione ADE scaduta — riconnetti l'estensione Chrome o usa "Incolla cookie"</span>
           <button onClick={() => setLocation("/login")} className="underline font-semibold whitespace-nowrap">Riconnetti →</button>
+        </div>
+      )}
+
+      {/* ── RISPOSTA ADE ── */}
+      {aeStatus && (
+        <div className={`px-4 py-2 text-xs border-b shrink-0 ${
+          aeStatus.connected
+            ? "bg-emerald-50 border-emerald-200 text-emerald-900"
+            : "bg-red-50 border-red-200 text-red-900"
+        }`}>
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start gap-2 min-w-0">
+              {aeStatus.connected
+                ? <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0 text-emerald-600" />
+                : <XCircle className="w-4 h-4 mt-0.5 shrink-0 text-red-600" />}
+              <div className="min-w-0">
+                <p className="font-semibold">
+                  Risposta ADE — {aeStatus.connected ? "sessione DCO riconosciuta" : "sessione DCO non riconosciuta"}
+                </p>
+                <p className="truncate">
+                  {aeStatus.service} · HTTP {aeStatus.httpStatus} · {aeStatus.message}
+                </p>
+                {(aeStatus.ragioneSociale || aeStatus.partitaIva || aeStatus.codiceFiscale) && (
+                  <p className="text-[11px] opacity-80 truncate">
+                    Impresa: {aeStatus.ragioneSociale || "non indicata"}
+                    {aeStatus.partitaIva ? ` · P.IVA ${aeStatus.partitaIva}` : ""}
+                    {aeStatus.codiceFiscale ? ` · CF ${aeStatus.codiceFiscale}` : ""}
+                  </p>
+                )}
+                {!aeStatus.connected && aeStatus.details && (
+                  <p className="text-[11px] opacity-80 truncate" title={aeStatus.details}>
+                    Dettaglio ADE: {aeStatus.details}
+                  </p>
+                )}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => aeStatusQuery.refetch()}
+              disabled={aeStatusQuery.isFetching}
+              className="inline-flex items-center gap-1 shrink-0 font-semibold underline underline-offset-2 disabled:opacity-60"
+              title="Verifica nuovamente la sessione direttamente su ADE"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${aeStatusQuery.isFetching ? "animate-spin" : ""}`} />
+              Verifica ADE
+            </button>
+          </div>
         </div>
       )}
 

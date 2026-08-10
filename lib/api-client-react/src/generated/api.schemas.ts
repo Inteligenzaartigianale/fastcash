@@ -37,6 +37,17 @@ export interface AuthStatus {
   expiresAt?: string | null;
 }
 
+export interface AeSessionStatus {
+  connected: boolean;
+  httpStatus: number;
+  service: string;
+  message: string;
+  ragioneSociale?: string;
+  partitaIva?: string;
+  codiceFiscale?: string;
+  details?: string;
+}
+
 export interface UtenteInfo {
   ragioneSociale?: string;
   partitaIva?: string;

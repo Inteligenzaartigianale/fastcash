@@ -34,8 +34,48 @@ const BROWSER_HEADERS = {
 };
 
 export async function validateDcoCookies(cookies: string): Promise<boolean> {
+  const result = await checkDcoSession(cookies);
+  return result.authenticated;
+}
+
+type DcoSessionCheck = {
+  authenticated: boolean;
+  httpStatus: number;
+  message: string;
+  details?: string;
+  ragioneSociale?: string;
+  partitaIva?: string;
+  codiceFiscale?: string;
+};
+
+export async function checkDcoSession(cookies: string): Promise<DcoSessionCheck> {
   const result = await aeGet(`${AE_COMMON}/info/me?v=${Date.now()}`, cookies);
-  return result.ok;
+  if (!result.ok) {
+    return {
+      authenticated: false,
+      httpStatus: result.status,
+      message: result.status === 401
+        ? "ADE non riconosce la sessione sul servizio DCO."
+        : `ADE ha restituito HTTP ${result.status} durante la verifica della sessione.`,
+      details: typeof result.data === "string" && result.data.trim()
+        ? result.data.slice(0, 500)
+        : undefined,
+    };
+  }
+
+  const raw = result.data as Record<string, unknown>;
+  const info = (raw.info ?? {}) as Record<string, Record<string, string>>;
+  const utente = (info.utenteAutenticato ?? {}) as Record<string, string>;
+  const lavoro = (info.utenzaLavoro ?? {}) as Record<string, string>;
+
+  return {
+    authenticated: true,
+    httpStatus: result.status,
+    message: "ADE ha riconosciuto la sessione sul servizio DCO.",
+    ragioneSociale: lavoro.denominazione ?? "",
+    partitaIva: lavoro.piva ?? lavoro.cf ?? "",
+    codiceFiscale: lavoro.cf ?? utente.cf ?? "",
+  };
 }
 
 /** Ensure the session is still authenticated on the actual DCO service. */
@@ -195,6 +235,35 @@ router.get("/ae/me", async (req, res): Promise<void> => {
   });
 
   res.json(parsed);
+});
+
+// GET /ae/status — diagnostic response from ADE, without exposing cookies
+router.get("/ae/status", async (req, res): Promise<void> => {
+  const session = getSession();
+  if (!session || !isSessionValid()) {
+    res.json({
+      connected: false,
+      httpStatus: 401,
+      service: "Documenti Commerciali Online ADE",
+      message: "Nessuna sessione ADE disponibile.",
+      details: "Esegui l'accesso automatico oppure apri il DCO in Chrome e collega l'estensione.",
+    });
+    return;
+  }
+
+  const check = await checkDcoSession(session.cookies);
+  if (!check.authenticated) clearSession();
+
+  res.json({
+    connected: check.authenticated,
+    httpStatus: check.httpStatus,
+    service: "Documenti Commerciali Online ADE",
+    message: check.message,
+    details: check.details,
+    ragioneSociale: check.ragioneSociale,
+    partitaIva: check.partitaIva,
+    codiceFiscale: check.codiceFiscale,
+  });
 });
 
 // POST /ae/documenti

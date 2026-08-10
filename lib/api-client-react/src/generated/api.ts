@@ -20,6 +20,7 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  AeSessionStatus,
   AuthStatus,
   DocumentoArchiviato,
   DocumentoInput,
@@ -273,6 +274,83 @@ export function useGetAuthStatus<TData = Awaited<ReturnType<typeof getAuthStatus
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetAuthStatusQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetAeStatusUrl = () => {
+
+
+
+
+  return `/api/ae/status`
+}
+
+/**
+ * @summary Verifica la sessione sul servizio DCO di ADE
+ */
+export const getAeStatus = async ( options?: RequestInit): Promise<AeSessionStatus> => {
+
+  return customFetch<AeSessionStatus>(getGetAeStatusUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAeStatusQueryKey = () => {
+    return [
+    `/api/ae/status`
+    ] as const;
+    }
+
+
+export const getGetAeStatusQueryOptions = <TData = Awaited<ReturnType<typeof getAeStatus>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAeStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAeStatusQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAeStatus>>> = ({ signal }) => getAeStatus({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAeStatus>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAeStatusQueryResult = NonNullable<Awaited<ReturnType<typeof getAeStatus>>>
+export type GetAeStatusQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Verifica la sessione sul servizio DCO di ADE
+ */
+
+export function useGetAeStatus<TData = Awaited<ReturnType<typeof getAeStatus>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAeStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAeStatusQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

@@ -46,6 +46,21 @@ export const GetAuthStatusResponse = zod.object({
 
 
 /**
+ * @summary Verifica la sessione sul servizio DCO di ADE
+ */
+export const GetAeStatusResponse = zod.object({
+  "connected": zod.boolean(),
+  "httpStatus": zod.number(),
+  "service": zod.string(),
+  "message": zod.string(),
+  "ragioneSociale": zod.string().optional(),
+  "partitaIva": zod.string().optional(),
+  "codiceFiscale": zod.string().optional(),
+  "details": zod.string().optional()
+})
+
+
+/**
  * @summary Logout and clear session
  */
 export const LogoutResponse = zod.object({

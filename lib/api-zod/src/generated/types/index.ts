@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from './aeSessionStatus';
 export * from './authStatus';
 export * from './documentoArchiviato';
 export * from './documentoInput';

@@ -30,10 +30,18 @@ function Router() {
 }
 
 function App() {
+  // Supporta sia il percorso attuale "/" sia la pubblicazione su
+  // https://scontrinipro.it/fiscale. L'API resta sull'origine /api.
+  const path = window.location.pathname;
+  const fiscaleBase =
+    path === "/fiscale" || path.startsWith("/fiscale/")
+      ? "/fiscale"
+      : "";
+
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <WouterRouter base={import.meta.env.BASE_URL?.replace(/\/$/, '') || ''}>
+        <WouterRouter base={fiscaleBase || import.meta.env.BASE_URL?.replace(/\/$/, '') || ''}>
           <Router />
         </WouterRouter>
         <Toaster />

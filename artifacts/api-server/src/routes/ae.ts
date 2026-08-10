@@ -1,8 +1,7 @@
 import { Router, type IRouter } from "express";
 import { sql } from "drizzle-orm";
 import { db, documentiTable, impostazioniTable } from "@workspace/db";
-import { getSession, isSessionValid, setSession } from "../lib/session.js";
-import { loginWithSiampe } from "../lib/siampe-login.js";
+import { clearSession, getSession, isSessionValid, setSession } from "../lib/session.js";
 import {
   InviaDocumentoBody,
   InviaDocumentoResponse,
@@ -34,26 +33,24 @@ const BROWSER_HEADERS = {
   "sec-fetch-site": "same-origin",
 };
 
-/** Ensure we have a valid session, auto-refresh if expired */
+export async function validateDcoCookies(cookies: string): Promise<boolean> {
+  const result = await aeGet(`${AE_COMMON}/info/me?v=${Date.now()}`, cookies);
+  return result.ok;
+}
+
+/** Ensure the session is still authenticated on the actual DCO service. */
 async function requireSession(): Promise<string> {
-  if (!isSessionValid()) {
-    const session = getSession();
-    if (session?.credentials) {
-      logger.info("Session expired, auto-refreshing via Puppeteer");
-      const result = await loginWithSiampe(session.credentials);
-      setSession({
-        ...session,           // preserve address/business data from previous /me call
-        cookies: result.cookieHeader,
-        ragioneSociale: result.ragioneSociale || session.ragioneSociale,
-        partitaIva: result.partitaIva || session.partitaIva,
-        codiceFiscale: result.codiceFiscale || session.codiceFiscale,
-        createdAt: new Date(),
-      });
-      return result.cookieHeader;
-    }
-    throw Object.assign(new Error("Not authenticated"), { status: 401 });
+  const session = getSession();
+  if (!session || !isSessionValid()) {
+    throw Object.assign(new Error("Sessione ADE scaduta"), { status: 401 });
   }
-  return getSession()!.cookies;
+
+  if (!(await validateDcoCookies(session.cookies))) {
+    clearSession();
+    throw Object.assign(new Error("Sessione DCO ADE non valida"), { status: 401 });
+  }
+
+  return session.cookies;
 }
 
 async function aeGet(

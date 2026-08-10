@@ -79,16 +79,19 @@ export default function HomePage() {
   const logoutMutation = useLogout();
   const inviaMutation = useInviaDocumento();
   const [extensionConnecting, setExtensionConnecting] = useState(false);
-  const [extensionConnected, setExtensionConnected] = useState(() => !!isAuthenticated);
+  const [extensionConnected, setExtensionConnected] = useState(false);
 
   // Se l'API ha una sessione attiva, l'estensione ha già consegnato i cookie.
   // Non usare l'errore di /ae/me per colorare il pulsante: è una verifica
   // separata e può fallire anche quando la connessione dell'estensione è OK.
   useEffect(() => {
-    if (isAuthenticated) {
+    if (me) {
       setExtensionConnected(true);
     }
-  }, [isAuthenticated]);
+    if (meError) {
+      setExtensionConnected(false);
+    }
+  }, [me, meError]);
 
   useEffect(() => {
     const onExtensionMessage = (event: MessageEvent) => {

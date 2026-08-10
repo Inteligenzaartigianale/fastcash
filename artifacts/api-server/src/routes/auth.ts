@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { loginWithSiampe } from "../lib/siampe-login.js";
+import { validateDcoCookies } from "./ae.js";
 import {
   setSession,
   getSession,
@@ -62,6 +63,9 @@ router.post("/auth/login", async (req, res): Promise<void> => {
   (async () => {
     try {
       const loginResult = await loginWithSiampe({ codiceFiscale, password, pin });
+      if (!(await validateDcoCookies(loginResult.cookieHeader))) {
+        throw new Error("Login completato, ma la sessione del servizio DCO non è valida. Usa l'estensione Chrome per collegare i cookie ADE.");
+      }
 
       setSession({
         cookies: loginResult.cookieHeader,
@@ -174,9 +178,18 @@ router.post("/auth/cookie", async (req, res): Promise<void> => {
 
   // CF is optional — /ae/me will populate it on first load
   const cf = (codiceFiscale ?? "").toUpperCase();
+  const normalizedCookies = cookieHeader.trim();
+
+  if (!(await validateDcoCookies(normalizedCookies))) {
+    res.status(401).json({
+      error: "Cookie ADE non validi per il servizio DCO",
+      details: "Apri il servizio Documenti Commerciali Online in Chrome, poi riconnetti l'estensione.",
+    });
+    return;
+  }
 
   setSession({
-    cookies: cookieHeader.trim(),
+    cookies: normalizedCookies,
     ragioneSociale: "",
     partitaIva: cf,
     codiceFiscale: cf,
@@ -195,7 +208,7 @@ router.post("/auth/cookie", async (req, res): Promise<void> => {
 
   // Popola i dati fiscali in background senza bloccare la conferma
   // dell'estensione: il suo stato "connesso" è quello mostrato nell'app.
-  fetchMeAndUpdateSession(cookieHeader.trim()).catch((err) => {
+  fetchMeAndUpdateSession(normalizedCookies).catch((err) => {
     logger.warn({ err }, "Background fetchMeAndUpdateSession failed (non-fatal)");
   });
 });

@@ -1,4 +1,6 @@
 import { Router, type IRouter } from "express";
+import { sql } from "drizzle-orm";
+import { db, impostazioniTable } from "@workspace/db";
 import { getSession, isSessionValid, setSession } from "../lib/session.js";
 import { loginWithSiampe } from "../lib/siampe-login.js";
 import {
@@ -216,6 +218,20 @@ router.post("/ae/documenti", async (req, res): Promise<void> => {
   const input = parsed.data;
   const session = getSession()!;
 
+  const [maxDcoRow] = await db.select().from(impostazioniTable).limit(1);
+  const importoDco = input.righe.reduce(
+    (sum, riga) => sum + Math.max(0, riga.quantita * riga.prezzoUnitario - (riga.sconto ?? 0)),
+    0,
+  );
+  const maxDco = maxDcoRow?.importoMassimoDco == null ? null : Number(maxDcoRow.importoMassimoDco);
+  if (maxDco != null && importoDco > maxDco + 0.005) {
+    res.status(400).json({
+      error: "Importo DCO superiore alla soglia configurata",
+      details: `Massimo consentito: € ${maxDco.toFixed(2)}`,
+    });
+    return;
+  }
+
   // Build DCW10 payload matching AE's format
   const dcw10Payload = buildDcw10Payload(input, session);
 
@@ -255,6 +271,18 @@ router.post("/ae/documenti", async (req, res): Promise<void> => {
     dataEmissione: new Date().toISOString().split("T")[0]!,
     pdfUrl: progressivo ? `/api/ae/stampa/${encodeURIComponent(progressivo)}` : null,
   });
+
+  const segno = input.tipoOperazione === "Reso" ? -1 : input.tipoOperazione === "Annullo" ? 0 : 1;
+  if (segno !== 0) {
+    for (const riga of input.righe) {
+      if (!riga.articoloId || riga.quantita <= 0) continue;
+      const qta = Math.trunc(riga.quantita) * segno;
+      // Le quantità vengono aggiornate con SQL atomico per supportare più casse/sessioni.
+      await db.execute(
+        sql`UPDATE articoli SET giacenza = giacenza - ${qta}, pezzi_venduti = pezzi_venduti + ${qta} WHERE id = ${riga.articoloId}`,
+      );
+    }
+  }
 
   res.json(docResult);
 });

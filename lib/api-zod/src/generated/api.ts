@@ -77,6 +77,7 @@ export const InviaDocumentoBody = zod.object({
   "descrizione": zod.string(),
   "prezzoUnitario": zod.number(),
   "aliquotaIva": zod.string().describe('Percentuale IVA (4, 5, 10, 22) oppure natura ADE per IVA 0% (N1, N2, N3, N4, N5, N6)'),
+  "articoloId": zod.string().optional().describe('ID dell\'articolo di catalogo, usato per aggiornare le giacenze dopo l\'accettazione ADE'),
   "sconto": zod.number().optional(),
   "omaggio": zod.boolean().optional()
 })),

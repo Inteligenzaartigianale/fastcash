@@ -137,7 +137,7 @@ export default function HomePage() {
 
   // Catalog from DB
   const { data: catalog } = useQuery({ queryKey: ["catalog"], queryFn: fetchCatalog });
-  const emptyC: Catalog = { reparti: [], articoli: [] };
+  const emptyC: Catalog = { reparti: [], articoli: [], impostazioni: { importoMassimoDco: null } };
 
   // Navigation
   const [repartoId, setRepartoId] = useState<string | null>(null);
@@ -238,12 +238,22 @@ export default function HomePage() {
       toast({ title: "Pagamento non quadra", description: `Mancano € ${formatCurrency(totals.complessivo - totalePagato)}`, variant: "destructive" });
       return;
     }
+    const maxDco = cat.impostazioni?.importoMassimoDco;
+    if (maxDco != null && totals.complessivo > maxDco + 0.005) {
+      toast({
+        title: "Importo DCO oltre soglia",
+        description: `Il limite configurato è € ${formatCurrency(maxDco)}.`,
+        variant: "destructive",
+      });
+      return;
+    }
 
     inviaMutation.mutate({
       data: {
         tipoOperazione: tipoOp,
         codiceLotteria: lotteria || undefined,
         righe: cart.map(i => ({
+          articoloId: i.articoloId,
           quantita: i.quantita,
           descrizione: i.nome,
           prezzoUnitario: i.prezzoUnitario,
@@ -263,6 +273,7 @@ export default function HomePage() {
     }, {
       onSuccess: (res) => {
         if (res.success) {
+          queryClient.invalidateQueries({ queryKey: ["catalog"] });
           sessionStorage.setItem("scontrino_result", JSON.stringify(res));
           sessionStorage.setItem("scontrino_rows", JSON.stringify(cart.map(i => ({
             quantita: i.quantita, descrizione: i.nome, prezzoUnitario: i.prezzoUnitario, aliquotaIva: i.aliquotaIva,
@@ -385,17 +396,34 @@ export default function HomePage() {
                 {articoliFiltrati.map(art => {
                   const rep = cat.reparti.find(r => r.id === art.repartoId);
                   const colore = rep?.colore ?? "#6b7280";
+                  const giacenza = art.giacenza ?? 0;
+                  const soglia = art.sogliaSottoscorta ?? 0;
+                  const statoScorta = giacenza <= 0 ? "esaurito" : giacenza <= soglia ? "sottoscorta" : "disponibile";
+                  const bordoScorta = statoScorta === "esaurito"
+                    ? "#ef4444"
+                    : statoScorta === "sottoscorta"
+                      ? "#f97316"
+                      : colore + "60";
                   return (
                     <button
                       key={art.id}
                       onClick={() => addToCart(art)}
                       className="bg-white rounded-xl p-3 text-left shadow-sm border-2 hover:shadow-md active:scale-95 transition-all flex flex-col justify-between shrink-0"
-                      style={{ width: articoloPx, height: articoloPx, borderColor: colore + "60", backgroundColor: colore + "0d" }}
+                      title={`${art.nome} · scorta: ${giacenza} · venduti: ${art.pezziVenduti ?? 0}`}
+                      style={{
+                        width: articoloPx,
+                        height: articoloPx,
+                        borderColor: bordoScorta,
+                        backgroundColor: statoScorta === "esaurito" ? "#fef2f2" : statoScorta === "sottoscorta" ? "#fff7ed" : colore + "0d",
+                      }}
                     >
                       <p className="text-sm font-semibold text-gray-800 leading-tight line-clamp-3">{art.nome}</p>
                       <div>
                         <p className="text-lg font-bold text-gray-900">€ {art.prezzoUnitario.toFixed(2)}</p>
                         <span className="text-[10px] text-gray-400 font-mono">{isNaturaIva(art.aliquotaIva) ? `0% · ${art.aliquotaIva}` : `${art.aliquotaIva}%`}</span>
+                        <span className={`block text-[10px] font-mono font-semibold ${statoScorta === "esaurito" ? "text-red-600" : statoScorta === "sottoscorta" ? "text-orange-600" : "text-gray-400"}`}>
+                          Scorta {giacenza}
+                        </span>
                       </div>
                     </button>
                   );

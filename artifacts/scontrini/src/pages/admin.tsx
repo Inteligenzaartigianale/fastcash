@@ -4,7 +4,8 @@ import {
   fetchCatalog,
   createReparto, updateReparto, deleteReparto,
   createArticolo, updateArticolo, deleteArticolo,
-  type Reparto, type Articolo, type AliquotaIva,
+  updateImpostazioni,
+  type Catalog, type Reparto, type Articolo, type AliquotaIva,
   ALIQUOTE_IVA, NATURE_IVA, isNaturaIva,
 } from "@/lib/catalog";
 import { Plus, Pencil, Trash2, Check } from "lucide-react";
@@ -57,6 +58,7 @@ export default function AdminPage() {
         {tab === "aliquote" && <AliquotePanel />}
         {tab === "visualizzazione" && (
           <div className="space-y-6">
+            <DcoLimitPanel catalog={catalog} onRefresh={invalidate} />
             <div>
               <h2 className="text-sm font-semibold text-gray-700 mb-3">Dimensione tasti articoli</h2>
               <div className="flex gap-3 flex-wrap">
@@ -79,6 +81,54 @@ export default function AdminPage() {
       </div>
 
       <BottomNav />
+    </div>
+  );
+}
+
+function DcoLimitPanel({ catalog, onRefresh }: { catalog: Catalog; onRefresh: () => void }) {
+  const [value, setValue] = useState<string>(
+    catalog.impostazioni?.importoMassimoDco == null ? "" : String(catalog.impostazioni.importoMassimoDco),
+  );
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    const parsed = value.trim() === "" ? null : Number(value.replace(",", "."));
+    if (parsed !== null && (!Number.isFinite(parsed) || parsed < 0)) return;
+    setSaving(true);
+    try {
+      await updateImpostazioni({ importoMassimoDco: parsed });
+      onRefresh();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-xl border p-4 shadow-sm space-y-3">
+      <div>
+        <h2 className="text-sm font-semibold text-gray-700">Limite importo Documento Commerciale</h2>
+        <p className="text-xs text-gray-400 mt-1">
+          Impedisce di emettere un DCO con un totale superiore alla soglia impostata. Lascia vuoto per disattivare il controllo.
+        </p>
+      </div>
+      <div className="flex items-end gap-2">
+        <div className="flex-1 space-y-1.5">
+          <Label>Importo massimo €</Label>
+          <CurrencyInput
+            className="w-full h-9 rounded border px-3 text-right font-mono text-sm"
+            value={value === "" ? 0 : Number(value.replace(",", "."))}
+            onChange={v => setValue(v === 0 ? "" : String(v))}
+          />
+        </div>
+        <Button onClick={save} disabled={saving} className="bg-[#1e3a5f]">
+          {saving ? "Salvo..." : "Salva"}
+        </Button>
+      </div>
+      {catalog.impostazioni?.importoMassimoDco != null && (
+        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          Limite attivo: <strong>€ {catalog.impostazioni.importoMassimoDco.toFixed(2)}</strong>
+        </p>
+      )}
     </div>
   );
 }
@@ -199,14 +249,14 @@ function ArticoliPanel({ catalog, onRefresh }: { catalog: { reparti: Reparto[]; 
   const [filterRep, setFilterRep] = useState<string>("tutti");
   const [form, setForm] = useState<Omit<Articolo, "id">>({
     nome: "", prezzoUnitario: 0, aliquotaIva: "22",
-    repartoId: catalog.reparti[0]?.id ?? "", attivo: true,
+    repartoId: catalog.reparti[0]?.id ?? "", giacenza: 0, pezziVenduti: 0, sogliaSottoscorta: 0, attivo: true,
   });
 
   const openNew = () => {
     setShowNew(true); setEditing(null);
-    setForm({ nome: "", prezzoUnitario: 0, aliquotaIva: "22", repartoId: catalog.reparti[0]?.id ?? "", attivo: true });
+    setForm({ nome: "", prezzoUnitario: 0, aliquotaIva: "22", repartoId: catalog.reparti[0]?.id ?? "", giacenza: 0, pezziVenduti: 0, sogliaSottoscorta: 0, attivo: true });
   };
-  const openEdit = (a: Articolo) => { setEditing(a); setShowNew(false); setForm({ nome: a.nome, prezzoUnitario: a.prezzoUnitario, aliquotaIva: isNaturaIva(a.aliquotaIva) ? a.aliquotaIva : a.aliquotaIva as AliquotaIva, repartoId: a.repartoId, attivo: a.attivo }); };
+  const openEdit = (a: Articolo) => { setEditing(a); setShowNew(false); setForm({ nome: a.nome, prezzoUnitario: a.prezzoUnitario, aliquotaIva: isNaturaIva(a.aliquotaIva) ? a.aliquotaIva : a.aliquotaIva as AliquotaIva, repartoId: a.repartoId, giacenza: a.giacenza ?? 0, pezziVenduti: a.pezziVenduti ?? 0, sogliaSottoscorta: a.sogliaSottoscorta ?? 0, attivo: a.attivo }); };
   const close = () => { setEditing(null); setShowNew(false); };
 
   const handleSave = async () => {
@@ -249,14 +299,21 @@ function ArticoliPanel({ catalog, onRefresh }: { catalog: { reparti: Reparto[]; 
 
       {articoliFiltrati.map(art => {
         const rep = catalog.reparti.find(r => r.id === art.repartoId);
+        const stock = art.giacenza ?? 0;
+        const stockClass = stock <= 0 ? "border-red-300" : stock <= (art.sogliaSottoscorta ?? 0) ? "border-orange-300" : "border-gray-200";
         return (
-          <div key={art.id} className={`bg-white rounded-xl border p-3.5 flex items-center gap-3 shadow-sm ${!art.attivo ? "opacity-50" : ""}`}>
+          <div key={art.id} className={`bg-white rounded-xl border-2 p-3.5 flex items-center gap-3 shadow-sm ${stockClass} ${!art.attivo ? "opacity-50" : ""}`}>
             <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: rep?.colore ?? "#9ca3af" }} />
             <div className="flex-1 min-w-0">
               <p className="font-medium text-gray-800">{art.nome}</p>
               <p className="text-xs text-gray-400">{rep?.nome} · {isNaturaIva(art.aliquotaIva) ? `IVA 0% · ${art.aliquotaIva}` : `IVA ${art.aliquotaIva}%`}</p>
             </div>
-            <p className="font-bold text-gray-800 text-sm font-mono shrink-0">€ {Number(art.prezzoUnitario).toFixed(2)}</p>
+            <div className="text-right shrink-0">
+              <p className="font-bold text-gray-800 text-sm font-mono">€ {Number(art.prezzoUnitario).toFixed(2)}</p>
+              <p className={`text-[10px] font-mono ${stock <= 0 ? "text-red-600" : stock <= (art.sogliaSottoscorta ?? 0) ? "text-orange-600" : "text-gray-400"}`}>
+                Scorta: {stock} · Venduti: {art.pezziVenduti ?? 0}
+              </p>
+            </div>
             <Switch checked={art.attivo} onCheckedChange={async v => { await updateArticolo(art.id, { attivo: v }); onRefresh(); }} />
             <button onClick={() => openEdit(art)} className="text-gray-400 hover:text-blue-500 p-1.5 rounded-lg hover:bg-blue-50"><Pencil className="w-4 h-4" /></button>
             <button onClick={async () => { if (confirm("Eliminare l'articolo?")) { await deleteArticolo(art.id); onRefresh(); } }} className="text-gray-400 hover:text-red-500 p-1.5 rounded-lg hover:bg-red-50"><Trash2 className="w-4 h-4" /></button>
@@ -298,6 +355,23 @@ function ArticoliPanel({ catalog, onRefresh }: { catalog: { reparti: Reparto[]; 
                 </Select>
               </div>
             </div>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="space-y-1.5">
+                <Label>Giacenza</Label>
+                <Input type="number" step="1" value={form.giacenza} onChange={e => setForm(f => ({ ...f, giacenza: Number(e.target.value) || 0 }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Venduti</Label>
+                <Input type="number" step="1" min="0" value={form.pezziVenduti} onChange={e => setForm(f => ({ ...f, pezziVenduti: Math.max(0, Number(e.target.value) || 0) }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Sottoscorta</Label>
+                <Input type="number" step="1" min="0" value={form.sogliaSottoscorta} onChange={e => setForm(f => ({ ...f, sogliaSottoscorta: Math.max(0, Number(e.target.value) || 0) }))} />
+              </div>
+            </div>
+            <p className="text-[11px] text-gray-400">
+              Sotto la soglia il bordo diventa arancione; a zero o in negativo diventa rosso. La vendita resta sempre consentita.
+            </p>
             <label className="flex items-center gap-3 cursor-pointer pt-1">
               <Switch checked={form.attivo} onCheckedChange={v => setForm(f => ({ ...f, attivo: v }))} />
               <span className="text-sm text-gray-700">Articolo attivo (visibile in cassa)</span>

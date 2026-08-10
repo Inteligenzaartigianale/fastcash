@@ -46,12 +46,20 @@ export interface Articolo {
   prezzoUnitario: number;
   aliquotaIva: AliquotaIva;
   repartoId: string;
+  giacenza: number;
+  pezziVenduti: number;
+  sogliaSottoscorta: number;
   attivo: boolean;
+}
+
+export interface Impostazioni {
+  importoMassimoDco: number | null;
 }
 
 export interface Catalog {
   reparti: Reparto[];
   articoli: Articolo[];
+  impostazioni?: Impostazioni;
 }
 
 const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
@@ -67,6 +75,7 @@ async function api<T>(method: string, path: string, body?: unknown): Promise<T> 
 }
 
 export const fetchCatalog  = ()                                          => api<Catalog>("GET",    "/catalog");
+export const updateImpostazioni = (patch: Partial<Impostazioni>)          => api<Impostazioni>("PUT", "/catalog/impostazioni", patch);
 export const createReparto = (nome: string, colore: string)              => api<Reparto>("POST",   "/catalog/reparti",       { nome, colore });
 export const updateReparto = (id: string, patch: Partial<Reparto>)       => api<Reparto>("PUT",    `/catalog/reparti/${id}`, patch);
 export const deleteReparto = (id: string)                                => api<void>  ("DELETE", `/catalog/reparti/${id}`);

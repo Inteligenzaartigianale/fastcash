@@ -12,6 +12,8 @@ export interface RigaDocumento {
   prezzoUnitario: number;
   /** Percentuale IVA (4, 5, 10, 22) oppure natura ADE per IVA 0% (N1, N2, N3, N4, N5, N6) */
   aliquotaIva: string;
+  /** ID dell'articolo di catalogo, usato per aggiornare le giacenze dopo l'accettazione ADE */
+  articoloId?: string;
   sconto?: number;
   omaggio?: boolean;
 }

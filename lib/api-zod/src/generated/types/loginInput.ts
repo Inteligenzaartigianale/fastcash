@@ -7,8 +7,10 @@
  */
 
 export interface LoginInput {
-  /** Codice fiscale del titolare */
-  codiceFiscale: string;
+  /** Codice fiscale oppure Partita IVA dell'attività */
+  identificativo?: string;
+  /** Campo legacy; usare identificativo */
+  codiceFiscale?: string;
   /** Password Fisconline */
   password: string;
   /** PIN Fisconline */

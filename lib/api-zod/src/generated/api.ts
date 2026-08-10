@@ -20,7 +20,8 @@ export const HealthCheckResponse = zod.object({
  * @summary Login via Fisconline (CF + password + PIN)
  */
 export const LoginBody = zod.object({
-  "codiceFiscale": zod.string().describe('Codice fiscale del titolare'),
+  "identificativo": zod.string().optional().describe('Codice fiscale oppure Partita IVA dell\'attività'),
+  "codiceFiscale": zod.string().optional().describe('Campo legacy; usare identificativo'),
   "password": zod.string().describe('Password Fisconline'),
   "pin": zod.string().describe('PIN Fisconline')
 })

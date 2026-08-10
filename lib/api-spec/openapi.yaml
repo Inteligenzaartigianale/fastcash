@@ -237,11 +237,14 @@ components:
 
     LoginInput:
       type: object
-      required: [codiceFiscale, password, pin]
+      required: [password, pin]
       properties:
+        identificativo:
+          type: string
+          description: Codice fiscale oppure Partita IVA dell'attività
         codiceFiscale:
           type: string
-          description: Codice fiscale del titolare
+          description: Campo legacy; usare identificativo
         password:
           type: string
           description: Password Fisconline

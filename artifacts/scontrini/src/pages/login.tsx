@@ -10,11 +10,11 @@ import { useToast } from "@/hooks/use-toast";
 
 const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
 
-async function startLoginJob(codiceFiscale: string, password: string, pin: string): Promise<string> {
+async function startLoginJob(identificativo: string, password: string, pin: string): Promise<string> {
   const res = await fetch(`${BASE}/api/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ codiceFiscale, password, pin }),
+    body: JSON.stringify({ identificativo, password, pin }),
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
@@ -42,11 +42,11 @@ async function pollJob(jobId: string): Promise<PollResult> {
   return res.json() as Promise<PollResult>;
 }
 
-async function loginWithCookies(codiceFiscale: string, cookieHeader: string): Promise<void> {
+async function loginWithCookies(identificativo: string, cookieHeader: string): Promise<void> {
   const res = await fetch(`${BASE}/api/auth/cookie`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ codiceFiscale, cookieHeader }),
+    body: JSON.stringify({ identificativo, cookieHeader }),
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({})) as { error?: string; details?: string };
@@ -65,7 +65,7 @@ export default function LoginPage() {
   const [mode, setMode] = useState<LoginMode>("cookie");
 
   // Auto mode fields
-  const [codiceFiscale, setCodiceFiscale] = useState("");
+  const [identificativo, setIdentificativo] = useState("");
   const [password, setPassword] = useState("");
   const [pin, setPin] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -90,14 +90,14 @@ export default function LoginPage() {
 
   const handleAutoSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!codiceFiscale || !password || !pin) {
+    if (!identificativo || !password || !pin) {
       toast({ title: "Errore", description: "Compila tutti i campi.", variant: "destructive" });
       return;
     }
     setIsPending(true);
     setStatusMsg("Connessione al portale AE...");
     try {
-      const jobId = await startLoginJob(codiceFiscale, password, pin);
+      const jobId = await startLoginJob(identificativo, password, pin);
       jobIdRef.current = jobId;
       const msgs = [
         "Autenticazione Fisconline...",
@@ -170,7 +170,7 @@ export default function LoginPage() {
   const handleCookieSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!cfCookie.trim()) {
-      toast({ title: "Errore", description: "Inserisci il codice fiscale.", variant: "destructive" });
+      toast({ title: "Errore", description: "Inserisci il codice fiscale oppure la Partita IVA.", variant: "destructive" });
       return;
     }
     if (!cookieHeader.trim() || cookieHeader.trim().length < 20) {
@@ -239,13 +239,13 @@ export default function LoginPage() {
             <form onSubmit={handleAutoSubmit}>
               <CardContent className="space-y-4 pt-6">
                 <div className="space-y-2">
-                  <Label htmlFor="cf">Codice Fiscale</Label>
+                  <Label htmlFor="cf">Codice fiscale o Partita IVA</Label>
                   <Input
                     id="cf"
                     type="text"
-                    placeholder="Inserisci il codice fiscale"
-                    value={codiceFiscale}
-                    onChange={(e) => setCodiceFiscale(e.target.value.toUpperCase())}
+                    placeholder="Es. RSSMRA80A01H501U oppure 12345678901"
+                    value={identificativo}
+                    onChange={(e) => setIdentificativo(e.target.value.toUpperCase().replace(/\s+/g, ""))}
                     disabled={isPending}
                     autoCapitalize="none"
                     autoCorrect="off"
@@ -344,11 +344,11 @@ export default function LoginPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="cf-cookie">Codice Fiscale</Label>
+                    <Label htmlFor="cf-cookie">Codice fiscale o Partita IVA</Label>
                   <Input
                     id="cf-cookie"
                     type="text"
-                    placeholder="Il tuo codice fiscale"
+                      placeholder="CF personale/aziendale oppure Partita IVA"
                     value={cfCookie}
                     onChange={(e) => setCfCookie(e.target.value.toUpperCase())}
                     disabled={isCookiePending}

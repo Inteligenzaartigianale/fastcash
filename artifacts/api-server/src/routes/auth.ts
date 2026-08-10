@@ -50,19 +50,28 @@ router.post("/auth/login", async (req, res): Promise<void> => {
     return;
   }
 
-  const { codiceFiscale, password, pin } = parsed.data;
+  const rawIdentifier = parsed.data.identificativo ?? parsed.data.codiceFiscale ?? "";
+  const identificativo = normalizeIdentifier(rawIdentifier);
+  if (!isValidIdentifier(identificativo)) {
+    res.status(400).json({
+      error: "Identificativo non valido",
+      details: "Inserisci un codice fiscale di 16 caratteri oppure una Partita IVA di 11 cifre.",
+    });
+    return;
+  }
+  const { password, pin } = parsed.data;
   pruneOldJobs();
 
   const jobId = randomUUID();
   const job: LoginJob = { status: "pending", createdAt: new Date() };
   loginJobs.set(jobId, job);
 
-  req.log.info({ codiceFiscale, jobId }, "Starting async SIAMPE login job");
+  req.log.info({ identificativoTipo: identifierType(identificativo), jobId }, "Starting async ADE login job");
 
   // Fire and forget — do NOT await
   (async () => {
     try {
-      const loginResult = await loginWithSiampe({ codiceFiscale, password, pin });
+      const loginResult = await loginWithSiampe({ identificativo, password, pin });
       if (!(await validateDcoCookies(loginResult.cookieHeader))) {
         throw new Error("Login completato, ma la sessione del servizio DCO non è valida. Usa l'estensione Chrome per collegare i cookie ADE.");
       }
@@ -78,7 +87,7 @@ router.post("/auth/login", async (req, res): Promise<void> => {
         comune: "",
         provincia: "",
         defAliquotaIVA: "22",
-        credentials: { codiceFiscale, password, pin },
+        credentials: { codiceFiscale: identificativo, password, pin },
         createdAt: new Date(),
       });
 
@@ -192,8 +201,9 @@ router.get("/auth/status", async (req, res): Promise<void> => {
 // The user logs in on their real browser, copies cookie header from DevTools,
 // and pastes it here. We store it directly in the session without Puppeteer.
 router.post("/auth/cookie", async (req, res): Promise<void> => {
-  const { cookieHeader, codiceFiscale } = req.body as {
+  const { cookieHeader, identificativo: rawIdentifier, codiceFiscale: legacyIdentifier } = req.body as {
     cookieHeader?: string;
+    identificativo?: string;
     codiceFiscale?: string;
   };
 
@@ -203,7 +213,14 @@ router.post("/auth/cookie", async (req, res): Promise<void> => {
   }
 
   // CF is optional — /ae/me will populate it on first load
-  const cf = (codiceFiscale ?? "").toUpperCase();
+  const identificativo = normalizeIdentifier(rawIdentifier ?? legacyIdentifier ?? "");
+  if (identificativo && !isValidIdentifier(identificativo)) {
+    res.status(400).json({
+      error: "Identificativo non valido",
+      details: "Inserisci un codice fiscale di 16 caratteri oppure una Partita IVA di 11 cifre.",
+    });
+    return;
+  }
   const normalizedCookies = cookieHeader.trim();
 
   if (!(await validateDcoCookies(normalizedCookies))) {
@@ -217,19 +234,19 @@ router.post("/auth/cookie", async (req, res): Promise<void> => {
   setSession({
     cookies: normalizedCookies,
     ragioneSociale: "",
-    partitaIva: cf,
-    codiceFiscale: cf,
+    partitaIva: /^\d{11}$/.test(identificativo) ? identificativo : "",
+    codiceFiscale: /^[A-Z0-9]{16}$/.test(identificativo) ? identificativo : "",
     indirizzo: "",
     numeroCivico: "",
     cap: "",
     comune: "",
     provincia: "",
     defAliquotaIVA: "22",
-    credentials: { codiceFiscale: (codiceFiscale ?? "").toUpperCase(), password: "", pin: "" },
+    credentials: { codiceFiscale: identificativo, password: "", pin: "" },
     createdAt: new Date(),
   });
 
-  req.log.info({ codiceFiscale, cookieLen: cookieHeader.length }, "Manual cookie session created");
+  req.log.info({ identificativoTipo: identifierType(identificativo), cookieLen: cookieHeader.length }, "Manual ADE cookie session created");
   res.json({ success: true });
 
   // Popola i dati fiscali in background senza bloccare la conferma
@@ -247,3 +264,18 @@ router.post("/auth/logout", async (req, res): Promise<void> => {
 });
 
 export default router;
+
+function normalizeIdentifier(value: string): string {
+  const normalized = value.trim().toUpperCase().replace(/\s+/g, "");
+  return normalized.startsWith("IT") ? normalized.slice(2) : normalized;
+}
+
+function isValidIdentifier(value: string): boolean {
+  return /^\d{11}$/.test(value) || /^[A-Z0-9]{16}$/.test(value);
+}
+
+function identifierType(value: string): "partita_iva" | "codice_fiscale" | "non_specificato" {
+  if (/^\d{11}$/.test(value)) return "partita_iva";
+  if (/^[A-Z0-9]{16}$/.test(value)) return "codice_fiscale";
+  return "non_specificato";
+}

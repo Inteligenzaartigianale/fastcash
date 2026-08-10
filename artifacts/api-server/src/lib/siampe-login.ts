@@ -22,7 +22,7 @@ const SIAMPE_LOGIN_URL_FALLBACK =
   encodeURIComponent("https://ivaservizi.agenziaentrate.gov.it/ser/documenticommercialionline/");
 
 export interface LoginCredentials {
-  codiceFiscale: string;
+  identificativo: string;
   password: string;
   pin: string;
 }
@@ -403,8 +403,8 @@ export async function loginWithSiampe(
       'input[placeholder*="codice fiscale" i]',
       'input[placeholder*="Codice Fiscale" i]',
     ], 15000);
-    logger.info({ cfSelector }, "Filling codice fiscale");
-    await clearAndType(page, cfSelector, credentials.codiceFiscale);
+    logger.info({ cfSelector }, "Filling ADE identifier");
+    await clearAndType(page, cfSelector, credentials.identificativo);
 
     // Fill password
     logger.info("Filling password");
@@ -657,8 +657,8 @@ export async function loginWithSiampe(
     return {
       cookieHeader: finalCookieHeader,
       ragioneSociale: ragioneSociale.split("\n")[0]?.trim() ?? "",
-      partitaIva: credentials.codiceFiscale,
-      codiceFiscale: credentials.codiceFiscale,
+      partitaIva: /^\d{11}$/.test(credentials.identificativo) ? credentials.identificativo : "",
+      codiceFiscale: /^[A-Z0-9]{16}$/.test(credentials.identificativo) ? credentials.identificativo : "",
     };
   } catch (err) {
     logger.error({ err, url: page.url() }, "SIAMPE login failed");
@@ -785,8 +785,8 @@ async function extractCookiesAndInfo(
   return {
     cookieHeader,
     ragioneSociale,
-    partitaIva: credentials.codiceFiscale,
-    codiceFiscale: credentials.codiceFiscale,
+    partitaIva: /^\d{11}$/.test(credentials.identificativo) ? credentials.identificativo : "",
+    codiceFiscale: /^[A-Z0-9]{16}$/.test(credentials.identificativo) ? credentials.identificativo : "",
   };
 }
 

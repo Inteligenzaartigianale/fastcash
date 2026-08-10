@@ -71,8 +71,19 @@ export default function HomePage() {
   const inviaMutation = useInviaDocumento();
   const [extensionConnecting, setExtensionConnecting] = useState(false);
   const [extensionConnected, setExtensionConnected] = useState(() =>
-    localStorage.getItem("scontrini_extension_connected") === "true",
+    localStorage.getItem("scontrini_extension_connected") === "true" ||
+    !!isAuthenticated,
   );
+
+  // Se l'API ha una sessione attiva, l'estensione ha già consegnato i cookie.
+  // Non usare l'errore di /ae/me per colorare il pulsante: è una verifica
+  // separata e può fallire anche quando la connessione dell'estensione è OK.
+  useEffect(() => {
+    if (isAuthenticated) {
+      setExtensionConnected(true);
+      localStorage.setItem("scontrini_extension_connected", "true");
+    }
+  }, [isAuthenticated]);
 
   useEffect(() => {
     const onExtensionMessage = (event: MessageEvent) => {

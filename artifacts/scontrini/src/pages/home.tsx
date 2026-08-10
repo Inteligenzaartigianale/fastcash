@@ -138,7 +138,7 @@ export default function HomePage() {
 
   // Catalog from DB
   const { data: catalog } = useQuery({ queryKey: ["catalog"], queryFn: fetchCatalog });
-  const emptyC: Catalog = { reparti: [], articoli: [], impostazioni: { importoMassimoDco: null } };
+  const emptyC: Catalog = { reparti: [], articoli: [], impostazioni: { importoMassimoDco: null, tastieraFissa: false } };
 
   // Navigation
   const [repartoId, setRepartoId] = useState<string | null>(null);
@@ -477,20 +477,22 @@ export default function HomePage() {
             onSubmit={handleSubmit}
             isPending={inviaMutation.isPending}
             reparti={cat.reparti}
-            onAddFreeAmount={() => setShowFreeAmount(true)}
+            tastieraFissa={cat.impostazioni?.tastieraFissa ?? false}
+            onOpenFreeAmount={() => setShowFreeAmount(true)}
+            onSaveFreeAmount={addFreeAmount}
           />
         </div>
       </div>
 
       {/* ── MOBILE: Cart FAB ── */}
-      {cart.length > 0 && !showCart && (
+      {(cart.length > 0 || (cat.impostazioni?.tastieraFissa ?? false)) && !showCart && (
         <button
           onClick={() => setShowCart(true)}
           className="md:hidden fixed bottom-4 right-4 bg-[#1e3a5f] text-white rounded-full px-5 py-3 shadow-xl flex items-center gap-3 z-30 active:scale-95 transition-transform"
         >
           <ShoppingCart className="w-5 h-5" />
-          <span className="font-bold">{cart.reduce((s, i) => s + i.quantita, 0)} art.</span>
-          <span className="font-mono font-bold">€ {formatCurrency(totals.complessivo)}</span>
+          <span className="font-bold">{cart.length > 0 ? `${cart.reduce((s, i) => s + i.quantita, 0)} art.` : "Cassa"}</span>
+          {cart.length > 0 && <span className="font-mono font-bold">€ {formatCurrency(totals.complessivo)}</span>}
         </button>
       )}
 
@@ -528,7 +530,9 @@ export default function HomePage() {
               onSubmit={handleSubmit}
               isPending={inviaMutation.isPending}
               reparti={cat.reparti}
-              onAddFreeAmount={() => setShowFreeAmount(true)}
+              tastieraFissa={cat.impostazioni?.tastieraFissa ?? false}
+              onOpenFreeAmount={() => setShowFreeAmount(true)}
+              onSaveFreeAmount={addFreeAmount}
             />
           </div>
         </div>
@@ -582,13 +586,15 @@ interface CartPanelProps {
   onSubmit: () => void;
   isPending: boolean;
   reparti: Catalog["reparti"];
-  onAddFreeAmount: () => void;
+  tastieraFissa: boolean;
+  onOpenFreeAmount: () => void;
+  onSaveFreeAmount: (amount: number, repartoId: string, aliquotaIva: AliquotaIva) => void;
 }
 
 function CartPanel({ cart, totals, totalePagato, resto, modoPagamento, setModoPagamento,
   importoContanti, setImportoContanti, importoElettronico, setImportoElettronico,
   importoTicket, setImportoTicket, nTicket, setNTicket, lotteria, setLotteria,
-  onUpdateQty, onRemove, onEdit, onClear, onSubmit, isPending, reparti, onAddFreeAmount }: CartPanelProps) {
+  onUpdateQty, onRemove, onEdit, onClear, onSubmit, isPending, reparti, tastieraFissa, onOpenFreeAmount, onSaveFreeAmount }: CartPanelProps) {
 
   const diff = totals.complessivo - totalePagato;
   const balanced = Math.abs(diff) < 0.01;
@@ -652,18 +658,22 @@ function CartPanel({ cart, totals, totalePagato, resto, modoPagamento, setModoPa
         )}
       </div>
 
-      <button
-        type="button"
-        onClick={onAddFreeAmount}
-        disabled={reparti.length === 0}
-        className="mx-3 mb-2 shrink-0 rounded-xl border-2 border-dashed border-[#1e3a5f]/30 bg-[#1e3a5f]/5 px-3 py-2.5 text-left text-[#1e3a5f] transition-colors hover:bg-[#1e3a5f]/10 disabled:cursor-not-allowed disabled:opacity-40"
-      >
-        <span className="flex items-center gap-2 text-sm font-semibold">
-          <Calculator className="h-4 w-4" />
-          Importo libero
-        </span>
-        <span className="mt-0.5 block pl-6 text-[10px] text-gray-500">Inserisci una cifra e scegli il reparto</span>
-      </button>
+      {tastieraFissa ? (
+        <FreeAmountKeyboard reparti={reparti} onSave={onSaveFreeAmount} />
+      ) : (
+        <button
+          type="button"
+          onClick={onOpenFreeAmount}
+          disabled={reparti.length === 0}
+          className="mx-3 mb-2 shrink-0 rounded-xl border-2 border-dashed border-[#1e3a5f]/30 bg-[#1e3a5f]/5 px-3 py-2.5 text-left text-[#1e3a5f] transition-colors hover:bg-[#1e3a5f]/10 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          <span className="flex items-center gap-2 text-sm font-semibold">
+            <Calculator className="h-4 w-4" />
+            Importo libero
+          </span>
+          <span className="mt-0.5 block pl-6 text-[10px] text-gray-500">Inserisci una cifra e scegli il reparto</span>
+        </button>
+      )}
 
       {/* Totals */}
       {cart.length > 0 && (
@@ -756,6 +766,97 @@ function CartPanel({ cart, totals, totalePagato, resto, modoPagamento, setModoPa
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+function FreeAmountKeyboard({
+  reparti,
+  onSave,
+}: {
+  reparti: Catalog["reparti"];
+  onSave: (amount: number, repartoId: string, aliquotaIva: AliquotaIva) => void;
+}) {
+  const [amountText, setAmountText] = useState("");
+  const [repartoId, setRepartoId] = useState(reparti[0]?.id ?? "");
+  const [aliquotaIva, setAliquotaIva] = useState<AliquotaIva>("22");
+
+  useEffect(() => {
+    if (!repartoId && reparti[0]?.id) setRepartoId(reparti[0].id);
+  }, [reparti, repartoId]);
+
+  const appendKey = (key: string) => {
+    setAmountText(prev => {
+      if (key === "backspace") return prev.slice(0, -1);
+      if (key === "clear") return "";
+      if (key === ",") return prev.includes(",") || prev.includes(".") ? prev : (prev || "0") + ",";
+      if (prev.includes(",") && prev.split(",")[1]!.length >= 2) return prev;
+      if (prev === "0" && key !== ",") return key;
+      return prev + key;
+    });
+  };
+
+  const amount = Number(amountText.replace(",", "."));
+  const canSave = Number.isFinite(amount) && amount > 0 && !!repartoId;
+
+  const save = () => {
+    if (!canSave) return;
+    onSave(Math.round(amount * 100) / 100, repartoId, aliquotaIva);
+    setAmountText("");
+  };
+
+  return (
+    <div className="mx-3 mb-2 shrink-0 rounded-xl border border-[#1e3a5f]/20 bg-white p-2.5 shadow-sm">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <span className="flex items-center gap-1.5 text-xs font-bold text-[#1e3a5f]">
+          <Calculator className="h-3.5 w-3.5" /> Importo libero
+        </span>
+        <span className="rounded-md bg-[#1e3a5f] px-2.5 py-1 text-lg font-bold tracking-wide text-white">
+          € {amountText || "0,00"}
+        </span>
+      </div>
+      <div className="grid grid-cols-3 gap-1.5">
+        {["1", "2", "3", "4", "5", "6", "7", "8", "9", ",", "0"].map(key => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => appendKey(key)}
+            className="h-9 rounded-lg border bg-gray-50 text-base font-semibold text-gray-700 shadow-sm transition-colors hover:bg-gray-100 active:scale-95 sm:h-10"
+          >
+            {key}
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={() => appendKey("backspace")}
+          aria-label="Cancella ultima cifra"
+          className="flex h-9 items-center justify-center rounded-lg border bg-gray-100 text-gray-600 shadow-sm hover:bg-gray-200 active:scale-95 sm:h-10"
+        >
+          <Delete className="h-4 w-4" />
+        </button>
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-1.5">
+        <Select value={repartoId} onValueChange={setRepartoId}>
+          <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Reparto" /></SelectTrigger>
+          <SelectContent>
+            {reparti.map(reparto => <SelectItem key={reparto.id} value={reparto.id}>{reparto.nome}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={aliquotaIva} onValueChange={value => setAliquotaIva(value as AliquotaIva)}>
+          <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {IVA_OPTIONS.map(value => <SelectItem key={value} value={value}>{ivaLabel(value)}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-1.5">
+        <button type="button" onClick={() => appendKey("clear")} className="h-9 rounded-lg text-xs font-semibold text-red-500 hover:bg-red-50">
+          Cancella
+        </button>
+        <button type="button" onClick={save} disabled={!canSave} className="h-9 rounded-lg bg-[#1e3a5f] text-xs font-bold text-white shadow disabled:cursor-not-allowed disabled:opacity-40">
+          Aggiungi
+        </button>
+      </div>
     </div>
   );
 }

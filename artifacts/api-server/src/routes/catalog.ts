@@ -19,7 +19,7 @@ router.get("/catalog", async (_req, res): Promise<void> => {
     db.select().from(articoliTable).orderBy(articoliTable.createdAt),
     db.select().from(impostazioniTable).limit(1),
   ]);
-  const settings = settingsRows[0] ?? { id: "default", importoMassimoDco: null };
+  const settings = settingsRows[0] ?? { id: "default", importoMassimoDco: null, tastieraFissa: false };
   res.json({
     reparti,
     articoli: articoli.map(a => ({
@@ -29,6 +29,7 @@ router.get("/catalog", async (_req, res): Promise<void> => {
     })),
     impostazioni: {
       importoMassimoDco: settings.importoMassimoDco == null ? null : parseFloat(settings.importoMassimoDco),
+      tastieraFissa: settings.tastieraFissa,
     },
   });
 });
@@ -36,20 +37,38 @@ router.get("/catalog", async (_req, res): Promise<void> => {
 router.put("/catalog/impostazioni", async (req, res): Promise<void> => {
   const raw = req.body?.importoMassimoDco;
   const value = raw === null || raw === "" || raw === undefined ? null : Number(raw);
+  const tastieraFissa = req.body?.tastieraFissa;
   if (value !== null && (!Number.isFinite(value) || value < 0)) {
     res.status(400).json({ error: "L'importo massimo deve essere un numero positivo o vuoto" });
+    return;
+  }
+  if (tastieraFissa !== undefined && typeof tastieraFissa !== "boolean") {
+    res.status(400).json({ error: "Il valore della tastiera fissa non è valido" });
     return;
   }
 
   const [row] = await db
     .insert(impostazioniTable)
-    .values({ id: "default", importoMassimoDco: value === null ? null : value.toFixed(2) })
+    .values({
+      id: "default",
+      importoMassimoDco: value === null ? null : value.toFixed(2),
+      tastieraFissa: tastieraFissa ?? false,
+    })
     .onConflictDoUpdate({
       target: impostazioniTable.id,
-      set: { importoMassimoDco: value === null ? null : value.toFixed(2), updatedAt: new Date() },
+      set: {
+        ...(req.body?.importoMassimoDco !== undefined
+          ? { importoMassimoDco: value === null ? null : value.toFixed(2) }
+          : {}),
+        ...(tastieraFissa !== undefined ? { tastieraFissa } : {}),
+        updatedAt: new Date(),
+      },
     })
     .returning();
-  res.json({ importoMassimoDco: row.importoMassimoDco == null ? null : parseFloat(row.importoMassimoDco) });
+  res.json({
+    importoMassimoDco: row.importoMassimoDco == null ? null : parseFloat(row.importoMassimoDco),
+    tastieraFissa: row.tastieraFissa,
+  });
 });
 
 // ── REPARTI ───────────────────────────────────────────────────────────────────

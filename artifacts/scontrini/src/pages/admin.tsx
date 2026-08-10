@@ -8,7 +8,7 @@ import {
   type Catalog, type Reparto, type Articolo, type AliquotaIva,
   ALIQUOTE_IVA, NATURE_IVA, isNaturaIva,
 } from "@/lib/catalog";
-import { Plus, Pencil, Trash2, Check } from "lucide-react";
+import { Plus, Pencil, Trash2, Check, Keyboard } from "lucide-react";
 import { BottomNav } from "@/components/bottom-nav";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,7 +24,7 @@ const IVA_OPTIONS: AliquotaIva[] = ["22", "10", "5", "4", "N1", "N2", "N3", "N4"
 const COLORI = ["#ef4444","#f97316","#eab308","#22c55e","#14b8a6","#3b82f6","#8b5cf6","#ec4899","#6b7280","#1e3a5f"];
 
 export default function AdminPage() {
-  const [tab, setTab] = useState<"reparti" | "articoli" | "aliquote" | "visualizzazione">("reparti");
+  const [tab, setTab] = useState<"generali" | "reparti" | "articoli" | "aliquote" | "visualizzazione">("generali");
   const { size, setSize } = useArticoloSize();
   const qc = useQueryClient();
   const { data: catalog, isLoading } = useQuery({ queryKey: ["catalog"], queryFn: fetchCatalog });
@@ -45,15 +45,16 @@ export default function AdminPage() {
       </header>
 
       <div className="bg-white border-b px-4 flex gap-1 shrink-0">
-        {(["reparti", "articoli", "aliquote", "visualizzazione"] as const).map(t => (
+        {(["generali", "reparti", "articoli", "aliquote", "visualizzazione"] as const).map(t => (
           <button key={t} onClick={() => setTab(t)}
             className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors capitalize ${tab === t ? "border-[#1e3a5f] text-[#1e3a5f]" : "border-transparent text-gray-500 hover:text-gray-700"}`}
-          >{t}</button>
+         >{t}</button>
         ))}
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 max-w-2xl w-full mx-auto">
-        {tab === "reparti"  && <RepartiPanel  catalog={catalog} onRefresh={invalidate} />}
+         {tab === "generali" && <GeneraliPanel catalog={catalog} onRefresh={invalidate} />}
+         {tab === "reparti"  && <RepartiPanel  catalog={catalog} onRefresh={invalidate} />}
         {tab === "articoli" && <ArticoliPanel catalog={catalog} onRefresh={invalidate} />}
         {tab === "aliquote" && <AliquotePanel />}
         {tab === "visualizzazione" && (
@@ -81,6 +82,46 @@ export default function AdminPage() {
       </div>
 
       <BottomNav />
+    </div>
+  );
+}
+
+function GeneraliPanel({ catalog, onRefresh }: { catalog: Catalog; onRefresh: () => void }) {
+  const [saving, setSaving] = useState(false);
+  const tastieraFissa = catalog.impostazioni?.tastieraFissa ?? false;
+
+  const toggleTastiera = async (checked: boolean) => {
+    setSaving(true);
+    try {
+      await updateImpostazioni({ tastieraFissa: checked });
+      onRefresh();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-sm font-semibold text-gray-700">Impostazioni generali</h2>
+        <p className="text-xs text-gray-400 mt-1">Personalizza il comportamento della schermata di vendita.</p>
+      </div>
+      <div className="bg-white rounded-xl border p-4 shadow-sm flex items-start gap-3">
+        <div className="w-9 h-9 rounded-lg bg-[#1e3a5f]/10 text-[#1e3a5f] flex items-center justify-center shrink-0">
+          <Keyboard className="w-4 h-4" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-gray-800">Tastiera numerica fissa</p>
+          <p className="text-xs text-gray-500 mt-1">
+            Mostra sempre la tastiera per l’inserimento dell’importo libero nel carrello.
+            È adattata agli schermi desktop e mobile e non usa la tastiera del dispositivo.
+          </p>
+        </div>
+        <Switch checked={tastieraFissa} disabled={saving} onCheckedChange={toggleTastiera} />
+      </div>
+      <p className="text-[11px] text-gray-400">
+        Disattivando questa opzione tornerà disponibile il pulsante che apre la tastiera in una finestra.
+      </p>
     </div>
   );
 }

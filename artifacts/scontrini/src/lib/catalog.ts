@@ -54,6 +54,7 @@ export interface Articolo {
 
 export interface Impostazioni {
   importoMassimoDco: number | null;
+  tastieraFissa: boolean;
 }
 
 export interface Catalog {

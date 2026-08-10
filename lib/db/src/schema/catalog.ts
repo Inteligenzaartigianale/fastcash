@@ -25,6 +25,7 @@ export const articoliTable = pgTable("articoli", {
 export const impostazioniTable = pgTable("impostazioni", {
   id:               text("id").primaryKey(),
   importoMassimoDco: numeric("importo_massimo_dco", { precision: 10, scale: 2 }),
+  tastieraFissa:    boolean("tastiera_fissa").notNull().default(false),
   updatedAt:        timestamp("updated_at").defaultNow().notNull(),
 });
 

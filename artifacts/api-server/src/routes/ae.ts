@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db, documentiTable, impostazioniTable } from "@workspace/db";
 import { clearSession, getSession, isSessionValid, setSession } from "../lib/session.js";
 import {
@@ -342,7 +342,8 @@ router.post("/ae/documenti", async (req, res): Promise<void> => {
   }
 
   const progressivo = aeResp.progressivo as string | undefined;
-  const dataEmissione = new Date().toISOString().split("T")[0]!;
+  const emissione = new Date();
+  const dataEmissione = emissione.toISOString().split("T")[0]!;
   const documentId = randomUUID();
 
   await db.insert(documentiTable).values({
@@ -350,6 +351,7 @@ router.post("/ae/documenti", async (req, res): Promise<void> => {
     numeroDocumento: progressivo ?? `DCW${new Date().getFullYear()}`,
     numeroProgressivo: progressivo ?? null,
     dataEmissione,
+    dataOraEmissione: emissione.toISOString(),
     tipoOperazione: input.tipoOperazione,
     totale: importoDco.toFixed(2),
     codiceLotteria: input.codiceLotteria ?? null,
@@ -379,6 +381,120 @@ router.post("/ae/documenti", async (req, res): Promise<void> => {
   }
 
   res.json(docResult);
+});
+
+// POST /documenti/:id/annulla
+// Sends a real ADE annullo linked to the original DCO and keeps both records.
+router.post("/documenti/:id/annulla", async (req, res): Promise<void> => {
+  let cookies: string;
+  try {
+    cookies = await requireSession();
+  } catch {
+    res.status(401).json({ error: "Non autenticato. Effettua il login." });
+    return;
+  }
+
+  const [originale] = await db
+    .select()
+    .from(documentiTable)
+    .where(eq(documentiTable.id, req.params.id));
+
+  if (!originale) {
+    res.status(404).json({ error: "Documento non trovato." });
+    return;
+  }
+  if (originale.tipoOperazione === "Annullo" || originale.stato === "Annullato") {
+    res.status(409).json({ error: "Il documento è già annullato o è un annullo." });
+    return;
+  }
+  if (!originale.numeroProgressivo) {
+    res.status(400).json({ error: "Il documento non ha un progressivo ADE collegabile." });
+    return;
+  }
+
+  const [annulloEsistente] = await db
+    .select({ id: documentiTable.id })
+    .from(documentiTable)
+    .where(eq(documentiTable.documentoOrigineId, originale.id));
+  if (annulloEsistente) {
+    res.status(409).json({ error: "Esiste già un annullo per questo documento." });
+    return;
+  }
+
+  const session = getSession()!;
+  const input = {
+    tipoOperazione: "Annullo",
+    righe: originale.righe,
+    pagamento: {
+      ...originale.pagamento,
+      documentoCollegato: originale.numeroProgressivo,
+    },
+    codiceLotteria: originale.codiceLotteria ?? undefined,
+    resoAnnullo: {
+      tipologia: "A" as const,
+      matricolaDispositivoEmittente: originale.numeroProgressivo.split("/")[0] ?? "ND",
+      dataOra: originale.dataOraEmissione
+        ? new Date(originale.dataOraEmissione).toISOString().slice(0, 19)
+        : originale.createdAt.toISOString().slice(0, 19),
+      progressivo: originale.numeroProgressivo.includes("/")
+        ? originale.numeroProgressivo.split("/").pop() ?? originale.numeroProgressivo
+        : originale.numeroProgressivo,
+    },
+  };
+  const result = await aePost(
+    `${AE_API}/doc/documenti/?v=${Date.now()}`,
+    cookies,
+    buildDcw10Payload(input, session),
+  );
+
+  if (!result.ok) {
+    res.status(result.status).json({
+      error: "Errore dall'AE durante l'annullamento del documento",
+      details: JSON.stringify(result.data),
+    });
+    return;
+  }
+
+  const aeResp = result.data as Record<string, unknown>;
+  if (aeResp.esito === false || (Array.isArray(aeResp.errori) && aeResp.errori.length > 0)) {
+    res.status(422).json({
+      error: "ADE ha rifiutato l'annullamento",
+      details: JSON.stringify(aeResp.errori),
+    });
+    return;
+  }
+
+  const progressivo = aeResp.progressivo as string | undefined;
+  const emissione = new Date();
+  const dataEmissione = emissione.toISOString().split("T")[0]!;
+  const annulloId = randomUUID();
+
+  await db.insert(documentiTable).values({
+    id: annulloId,
+    numeroDocumento: progressivo ?? `DCW${new Date().getFullYear()}`,
+    numeroProgressivo: progressivo ?? null,
+    dataEmissione,
+    dataOraEmissione: emissione.toISOString(),
+    tipoOperazione: "Annullo",
+    stato: "Emesso",
+    documentoOrigineId: originale.id,
+    totale: Number(originale.totale).toFixed(2),
+    codiceLotteria: originale.codiceLotteria,
+    righe: originale.righe,
+    pagamento: input.pagamento,
+  });
+  await db
+    .update(documentiTable)
+    .set({ stato: "Annullato" })
+    .where(eq(documentiTable.id, originale.id));
+
+  res.json(InviaDocumentoResponse.parse({
+    success: true,
+    id: annulloId,
+    numeroDocumento: progressivo ?? `DCW${new Date().getFullYear()}`,
+    numeroProgressivo: progressivo ?? "",
+    dataEmissione,
+  }));
 });
 
 // GET /ae/stampa/:numeroProgressivo
@@ -471,6 +587,12 @@ function buildDcw10Payload(
       prestazioniServizi?: number;
       creditoCessioneBene?: number;
     };
+    resoAnnullo?: {
+      tipologia: "R" | "A";
+      matricolaDispositivoEmittente: string;
+      dataOra: string;
+      progressivo: string;
+    };
   },
   session: {
     partitaIva: string;
@@ -557,6 +679,35 @@ function buildDcw10Payload(
     { tipo: "NR_CS", importo: fmt2(nrCs) },
   ];
 
+  const documentoCommercialeBase = {
+    cfCessionarioCommittente: input.codiceLotteria ?? "",
+    flagDocCommPerRegalo: input.flagDocCommPerRegalo ?? false,
+    progressivoCollegato: pag.documentoCollegato ?? "",
+    dataOra: todayDDMMYYYY(),
+    multiAttivita: { codiceAttivita: "", descAttivita: "" },
+    importoTotaleIva: fmt8(importoTotaleIva),
+    scontoTotale: fmt8(scontoTotale),
+    scontoTotaleLordo: fmt8(scontoTotale),
+    totaleImponibile: fmt8(totaleImponibile),
+    ammontareComplessivo: fmt8(ammontareComplessivo),
+    totaleNonRiscosso: fmt8(totaleNonRiscosso),
+    elementiContabili,
+    scontoAbbuono: fmt2(pag.scontoAPagare ?? 0),
+    importoDetraibileDeducibile: fmt8(0),
+  };
+
+  // ADE requires ResoAnnullo as an alternative to Vendita. In particular,
+  // an annullo must never be sent with the ordinary payment block.
+  const documentoCommerciale = input.resoAnnullo
+    ? {
+        ...documentoCommercialeBase,
+        resoAnnullo: input.resoAnnullo,
+      }
+    : {
+        ...documentoCommercialeBase,
+        vendita,
+      };
+
   // ── Final payload — field names/structure exactly as in real HAR capture ───
   return {
     datiTrasmissione: { formato: "DCW10" },
@@ -581,23 +732,7 @@ function buildDcw10Payload(
       multiAttivita: [],
       multiSede: [],
     },
-    documentoCommerciale: {
-      cfCessionarioCommittente: input.codiceLotteria ?? "",
-      flagDocCommPerRegalo: input.flagDocCommPerRegalo ?? false,
-      progressivoCollegato: pag.documentoCollegato ?? "",
-      dataOra: todayDDMMYYYY(),              // "DD/MM/YYYY" not ISO
-      multiAttivita: { codiceAttivita: "", descAttivita: "" }, // object not array
-      importoTotaleIva: fmt8(importoTotaleIva),
-      scontoTotale: fmt8(scontoTotale),
-      scontoTotaleLordo: fmt8(scontoTotale),
-      totaleImponibile: fmt8(totaleImponibile),
-      ammontareComplessivo: fmt8(ammontareComplessivo),
-      totaleNonRiscosso: fmt8(totaleNonRiscosso),
-      elementiContabili,
-      vendita,
-      scontoAbbuono: fmt2(pag.scontoAPagare ?? 0),
-      importoDetraibileDeducibile: fmt8(0),
-    },
+    documentoCommerciale,
     flagIdentificativiModificati: false,
   };
 }

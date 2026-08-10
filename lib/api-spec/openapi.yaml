@@ -212,6 +212,43 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /documenti/{id}/annulla:
+    post:
+      operationId: annullaDocumento
+      tags: [documenti]
+      summary: Annulla un documento commerciale presso ADE
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Annullo inviato con successo
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentoResult"
+        "400":
+          description: Documento non annullabile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Sessione scaduta
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Documento già annullato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /ae/stampa/{numeroProgressivo}:
     get:
       operationId: getStampa
@@ -415,7 +452,7 @@ components:
 
     DocumentoArchiviato:
       type: object
-      required: [id, numeroDocumento, dataEmissione, tipoOperazione, totale, righe, pagamento]
+      required: [id, numeroDocumento, dataEmissione, tipoOperazione, stato, totale, righe, pagamento]
       properties:
         id:
           type: string
@@ -426,8 +463,17 @@ components:
         dataEmissione:
           type: string
           format: date
+        dataOraEmissione:
+          type: ["string", "null"]
+          description: "Data e ora ISO dell'emissione, usata per collegare un annullo ADE"
         tipoOperazione:
           type: string
+        stato:
+          type: string
+          description: "Stato del documento: Emesso o Annullato"
+        documentoOrigineId:
+          type: ["string", "null"]
+          description: "ID del documento originale per un annullo"
         totale:
           type: number
         codiceLotteria:

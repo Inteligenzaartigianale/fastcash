@@ -1,9 +1,9 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft, CheckCircle2, FileText, Plus, LogOut } from "lucide-react";
+import { AlertTriangle, ArrowLeft, CheckCircle2, FileText, Plus, LogOut, XCircle } from "lucide-react";
 import { useLocation } from "wouter";
-import { useGetDocumento, useLogout } from "@workspace/api-client-react";
+import { useAnnullaDocumento, useGetDocumento, useLogout } from "@workspace/api-client-react";
 import type { DocumentoResult, RigaDocumento } from "@workspace/api-client-react";
 import { formatCurrency } from "@/lib/utils";
 import { ivaLabel } from "@/lib/catalog";
@@ -11,6 +11,8 @@ import { ivaLabel } from "@/lib/catalog";
 export default function RisultatoPage() {
   const [, setLocation] = useLocation();
   const logoutMutation = useLogout();
+  const annullaMutation = useAnnullaDocumento();
+  const [showAnnulla, setShowAnnulla] = useState(false);
   
   const documentId = new URLSearchParams(window.location.search).get("id") ?? "";
   const documentQuery = useGetDocumento(documentId, {
@@ -50,6 +52,18 @@ export default function RisultatoPage() {
 
   const handleNuovo = () => {
     setLocation("/");
+  };
+
+  const handleAnnulla = () => {
+    annullaMutation.mutate(
+      { id: archivedDocument.id },
+      {
+        onSuccess: () => {
+          setShowAnnulla(false);
+          void documentQuery.refetch();
+        },
+      },
+    );
   };
 
   return (
@@ -121,18 +135,55 @@ export default function RisultatoPage() {
               </div>
             </div>
           </CardContent>
-          <CardFooter className="pt-6 border-t bg-muted/20">
-            <Button
-              className="w-full"
-              onClick={handleNuovo}
-              data-testid="button-nuovo-doc"
-            >
-              <Plus className="w-4 h-4 mr-2" />
+          <CardFooter className="flex flex-col gap-3 border-t bg-muted/20 pt-6">
+            {archivedDocument.tipoOperazione !== "Annullo" && archivedDocument.stato !== "Annullato" && (
+              <Button
+                variant="outline"
+                className="w-full border-red-200 text-red-700 hover:bg-red-50"
+                onClick={() => setShowAnnulla(true)}
+                disabled={annullaMutation.isPending}
+              >
+                <XCircle className="mr-2 h-4 w-4" />
+                Annulla documento
+              </Button>
+            )}
+            {archivedDocument.stato === "Annullato" && (
+              <div className="flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                <AlertTriangle className="h-4 w-4 shrink-0" />
+                Documento annullato presso ADE.
+              </div>
+            )}
+            {annullaMutation.isError && (
+              <p className="text-sm text-red-600">
+                Impossibile annullare il documento. Verifica la sessione ADE e riprova.
+              </p>
+            )}
+            <Button className="w-full" onClick={handleNuovo} data-testid="button-nuovo-doc">
+              <Plus className="mr-2 h-4 w-4" />
               Nuovo Documento
             </Button>
           </CardFooter>
         </Card>
       </main>
+      {showAnnulla && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true">
+          <div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl">
+            <h2 className="text-base font-bold text-gray-900">Conferma annullamento</h2>
+            <p className="mt-2 text-sm text-gray-600">
+              Verrà inviato ad ADE un annullo collegato al documento{" "}
+              <strong>{archivedDocument.numeroDocumento}</strong>. Il documento originale resterà nello storico.
+            </p>
+            <div className="mt-5 flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={() => setShowAnnulla(false)} disabled={annullaMutation.isPending}>
+                No, torna indietro
+              </Button>
+              <Button className="flex-1 bg-red-600 hover:bg-red-700" onClick={handleAnnulla} disabled={annullaMutation.isPending}>
+                {annullaMutation.isPending ? "Invio..." : "Conferma annullo"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -136,7 +136,10 @@ export const ListDocumentiResponseItem = zod.object({
   "numeroDocumento": zod.string(),
   "numeroProgressivo": zod.string().nullish(),
   "dataEmissione": zod.coerce.date(),
+  "dataOraEmissione": zod.string().nullish().describe('Data e ora ISO dell\'emissione, usata per collegare un annullo ADE'),
   "tipoOperazione": zod.string(),
+  "stato": zod.string().describe('Stato del documento: Emesso o Annullato'),
+  "documentoOrigineId": zod.string().nullish().describe('ID del documento originale per un annullo'),
   "totale": zod.number(),
   "codiceLotteria": zod.string().nullish(),
   "righe": zod.array(zod.object({
@@ -172,7 +175,10 @@ export const GetDocumentoResponse = zod.object({
   "numeroDocumento": zod.string(),
   "numeroProgressivo": zod.string().nullish(),
   "dataEmissione": zod.coerce.date(),
+  "dataOraEmissione": zod.string().nullish().describe('Data e ora ISO dell\'emissione, usata per collegare un annullo ADE'),
   "tipoOperazione": zod.string(),
+  "stato": zod.string().describe('Stato del documento: Emesso o Annullato'),
+  "documentoOrigineId": zod.string().nullish().describe('ID del documento originale per un annullo'),
   "totale": zod.number(),
   "codiceLotteria": zod.string().nullish(),
   "righe": zod.array(zod.object({
@@ -192,6 +198,23 @@ export const GetDocumentoResponse = zod.object({
   "scontoAPagare": zod.number().optional(),
   "documentoCollegato": zod.string().optional()
 })
+})
+
+
+/**
+ * @summary Annulla un documento commerciale presso ADE
+ */
+export const AnnullaDocumentoParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const AnnullaDocumentoResponse = zod.object({
+  "success": zod.boolean(),
+  "numeroDocumento": zod.string().describe('Es: DCW2026\/1252-9663'),
+  "numeroProgressivo": zod.string().optional(),
+  "dataEmissione": zod.string().optional(),
+  "pdfUrl": zod.string().nullish(),
+  "id": zod.string()
 })
 
 

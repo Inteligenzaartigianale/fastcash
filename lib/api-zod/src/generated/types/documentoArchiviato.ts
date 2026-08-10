@@ -14,7 +14,19 @@ export interface DocumentoArchiviato {
   /** @nullable */
   numeroProgressivo?: string | null;
   dataEmissione: Date;
+  /**
+     * Data e ora ISO dell'emissione, usata per collegare un annullo ADE
+     * @nullable
+     */
+  dataOraEmissione?: string | null;
   tipoOperazione: string;
+  /** Stato del documento: Emesso o Annullato */
+  stato: string;
+  /**
+     * ID del documento originale per un annullo
+     * @nullable
+     */
+  documentoOrigineId?: string | null;
   totale: number;
   /** @nullable */
   codiceLotteria?: string | null;

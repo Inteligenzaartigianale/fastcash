@@ -743,6 +743,77 @@ export function useGetDocumento<TData = Awaited<ReturnType<typeof getDocumento>>
 
 
 
+export const getAnnullaDocumentoUrl = (id: string,) => {
+
+
+
+
+  return `/api/documenti/${id}/annulla`
+}
+
+/**
+ * @summary Annulla un documento commerciale presso ADE
+ */
+export const annullaDocumento = async (id: string, options?: RequestInit): Promise<DocumentoResult> => {
+
+  return customFetch<DocumentoResult>(getAnnullaDocumentoUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getAnnullaDocumentoMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof annullaDocumento>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof annullaDocumento>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['annullaDocumento'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof annullaDocumento>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  annullaDocumento(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AnnullaDocumentoMutationResult = NonNullable<Awaited<ReturnType<typeof annullaDocumento>>>
+
+    export type AnnullaDocumentoMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Annulla un documento commerciale presso ADE
+ */
+export const useAnnullaDocumento = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof annullaDocumento>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof annullaDocumento>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getAnnullaDocumentoMutationOptions(options));
+    }
+
 export const getGetStampaUrl = (numeroProgressivo: string,) => {
 
 

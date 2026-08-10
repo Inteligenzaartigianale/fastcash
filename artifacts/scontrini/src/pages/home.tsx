@@ -135,7 +135,7 @@ export default function HomePage() {
   const emptyC: Catalog = {
     reparti: [],
     articoli: [],
-    impostazioni: { importoMassimoDco: null, tastieraFissa: false, dimensioneTasti: "S" },
+    impostazioni: { importoMassimoDco: null, tastieraFissa: false, mostraTicket: false, dimensioneTasti: "S" },
   };
 
   // Navigation
@@ -178,8 +178,37 @@ export default function HomePage() {
     if (modoPagamento === "contanti" && importoContanti === 0) setImportoContanti(totals.complessivo);
   }, [totals.complessivo, modoPagamento]);
 
-  const totalePagato = importoContanti + importoElettronic + importoTicket;
+  useEffect(() => {
+    if (modoPagamento === "ticket" && !cat.impostazioni?.mostraTicket) {
+      setModoPagamento("contanti");
+    }
+  }, [cat.impostazioni?.mostraTicket, modoPagamento]);
+
+  const totalePagato = modoPagamento === "contanti"
+    ? importoContanti
+    : modoPagamento === "elettronico"
+      ? importoElettronic
+      : importoTicket;
   const resto = modoPagamento === "contanti" ? Math.max(0, importoContanti - totals.complessivo) : 0;
+
+  const selectPaymentMode = useCallback((mode: "contanti" | "elettronico" | "ticket") => {
+    setModoPagamento(mode);
+    if (mode === "contanti" && cart.length > 0) {
+      const amount = Number(fixedAmountText.replace(",", "."));
+      if (Number.isFinite(amount) && amount > 0) {
+        setImportoContanti(Math.round(amount * 100) / 100);
+        setFixedAmountText("");
+      }
+    }
+  }, [cart.length, fixedAmountText]);
+
+  const handleFixedAmountTextChange = useCallback((value: string) => {
+    setFixedAmountText(value);
+    if (cart.length > 0 && modoPagamento === "contanti") {
+      const amount = Number(value.replace(",", "."));
+      setImportoContanti(Number.isFinite(amount) && amount > 0 ? Math.round(amount * 100) / 100 : 0);
+    }
+  }, [cart.length, modoPagamento]);
 
   // ── Cart actions ──────────────────────────────────────────────────────────
 
@@ -188,7 +217,7 @@ export default function HomePage() {
 
     // Tastiera fissa: importo → articolo/reparto → pagamento.
     // Reparto e IVA arrivano dall'articolo toccato, senza selezioni duplicate.
-    if (cat.impostazioni?.tastieraFissa && Number.isFinite(amount) && amount > 0) {
+    if (cat.impostazioni?.tastieraFissa && cart.length === 0 && Number.isFinite(amount) && amount > 0) {
       setCart(prev => [...prev, {
         articoloId: "",
         nome: `Importo libero · ${art.nome}`,
@@ -220,7 +249,7 @@ export default function HomePage() {
         omaggio: false,
       }];
     });
-  }, [cat.impostazioni?.tastieraFissa, fixedAmountText]);
+  }, [cat.impostazioni?.tastieraFissa, fixedAmountText, cart.length]);
 
   const addFreeAmount = useCallback((amount: number, repartoId: string, aliquotaIva: AliquotaIva) => {
     const reparto = cat.reparti.find(r => r.id === repartoId);
@@ -299,10 +328,10 @@ export default function HomePage() {
           omaggio: i.omaggio,
         })),
         pagamento: {
-          contanti: importoContanti,
-          elettronico: importoElettronic,
-          ticketRestaurant: importoTicket,
-          numeroTicket: nTicket || undefined,
+          contanti: modoPagamento === "contanti" ? importoContanti : 0,
+          elettronico: modoPagamento === "elettronico" ? importoElettronic : 0,
+          ticketRestaurant: modoPagamento === "ticket" ? importoTicket : 0,
+          numeroTicket: modoPagamento === "ticket" ? (nTicket || undefined) : undefined,
           scontoAPagare: 0,
           documentoCollegato: "",
         },
@@ -474,7 +503,7 @@ export default function HomePage() {
             totalePagato={totalePagato}
             resto={resto}
             modoPagamento={modoPagamento}
-            setModoPagamento={setModoPagamento}
+            setModoPagamento={selectPaymentMode}
             importoContanti={importoContanti}
             setImportoContanti={setImportoContanti}
             importoElettronico={importoElettronic}
@@ -494,7 +523,8 @@ export default function HomePage() {
             reparti={cat.reparti}
             tastieraFissa={cat.impostazioni?.tastieraFissa ?? false}
             fixedAmountText={fixedAmountText}
-            onFixedAmountTextChange={setFixedAmountText}
+            onFixedAmountTextChange={handleFixedAmountTextChange}
+            mostraTicket={cat.impostazioni?.mostraTicket ?? false}
             onOpenFreeAmount={() => setShowFreeAmount(true)}
             onSaveFreeAmount={addFreeAmount}
             onOpenHistory={() => setLocation("/storico")}
@@ -530,7 +560,7 @@ export default function HomePage() {
               totalePagato={totalePagato}
               resto={resto}
               modoPagamento={modoPagamento}
-              setModoPagamento={setModoPagamento}
+              setModoPagamento={selectPaymentMode}
               importoContanti={importoContanti}
               setImportoContanti={setImportoContanti}
               importoElettronico={importoElettronic}
@@ -549,8 +579,9 @@ export default function HomePage() {
               isPending={inviaMutation.isPending}
               reparti={cat.reparti}
               tastieraFissa={cat.impostazioni?.tastieraFissa ?? false}
-            fixedAmountText={fixedAmountText}
-            onFixedAmountTextChange={setFixedAmountText}
+              fixedAmountText={fixedAmountText}
+              onFixedAmountTextChange={handleFixedAmountTextChange}
+              mostraTicket={cat.impostazioni?.mostraTicket ?? false}
               onOpenFreeAmount={() => setShowFreeAmount(true)}
               onSaveFreeAmount={addFreeAmount}
               onOpenHistory={() => setLocation("/storico")}
@@ -610,6 +641,7 @@ interface CartPanelProps {
   tastieraFissa: boolean;
   fixedAmountText: string;
   onFixedAmountTextChange: (value: string) => void;
+  mostraTicket: boolean;
   onOpenFreeAmount: () => void;
   onSaveFreeAmount: (amount: number, repartoId: string, aliquotaIva: AliquotaIva) => void;
   onOpenHistory: () => void;
@@ -619,10 +651,13 @@ function CartPanel({ cart, totals, totalePagato, resto, modoPagamento, setModoPa
   importoContanti, setImportoContanti, importoElettronico, setImportoElettronico,
   importoTicket, setImportoTicket, nTicket, setNTicket, lotteria, setLotteria,
   onUpdateQty, onRemove, onEdit, onClear, onSubmit, isPending, reparti, tastieraFissa,
-  fixedAmountText, onFixedAmountTextChange, onOpenFreeAmount, onSaveFreeAmount, onOpenHistory }: CartPanelProps) {
+  fixedAmountText, onFixedAmountTextChange, mostraTicket, onOpenFreeAmount, onSaveFreeAmount, onOpenHistory }: CartPanelProps) {
 
   const diff = totals.complessivo - totalePagato;
   const balanced = Math.abs(diff) < 0.01;
+  const paymentModes: Array<"contanti" | "elettronico" | "ticket"> = mostraTicket
+    ? ["contanti", "elettronico", "ticket"]
+    : ["contanti", "elettronico"];
 
   return (
     <div className="h-full flex flex-col">
@@ -706,6 +741,7 @@ function CartPanel({ cart, totals, totalePagato, resto, modoPagamento, setModoPa
         <FreeAmountKeyboard
           amountText={fixedAmountText}
           onAmountTextChange={onFixedAmountTextChange}
+          isPaymentEntry={cart.length > 0}
         />
       ) : (
         <button
@@ -736,8 +772,8 @@ function CartPanel({ cart, totals, totalePagato, resto, modoPagamento, setModoPa
           {/* Payment */}
           <div className="border-t px-4 py-3 space-y-3 shrink-0">
             {/* Mode buttons */}
-            <div className="grid grid-cols-3 gap-2">
-              {(["contanti", "elettronico", "ticket"] as const).map(m => (
+            <div className={`grid ${mostraTicket ? "grid-cols-3" : "grid-cols-2"} gap-2`}>
+              {paymentModes.map(m => (
                 <button
                   key={m}
                   onClick={() => setModoPagamento(m)}
@@ -755,7 +791,7 @@ function CartPanel({ cart, totals, totalePagato, resto, modoPagamento, setModoPa
                   <span className="text-xs text-gray-500 w-20 shrink-0">Incassato €</span>
                   <CurrencyInput className="flex-1 h-11 md:h-10 rounded-lg border px-3 text-right font-mono text-base" value={importoContanti} onChange={setImportoContanti} />
                 </div>
-                {resto > 0 && (
+                {importoContanti > 0 && resto >= 0 && (
                 <div className="bg-green-50 border border-green-200 rounded-lg px-3 py-2 flex justify-between items-center">
                     <span className="text-sm text-green-700 font-medium">Resto</span>
                     <span className="font-mono text-base font-bold text-green-700">€ {formatCurrency(resto)}</span>
@@ -820,9 +856,11 @@ function CartPanel({ cart, totals, totalePagato, resto, modoPagamento, setModoPa
 function FreeAmountKeyboard({
   amountText,
   onAmountTextChange,
+  isPaymentEntry,
 }: {
   amountText: string;
   onAmountTextChange: (value: string) => void;
+  isPaymentEntry: boolean;
 }) {
   const appendKey = (key: string) => {
     onAmountTextChange((() => {
@@ -842,14 +880,16 @@ function FreeAmountKeyboard({
     <div className="mx-3 mb-2 shrink-0 rounded-xl border border-[#1e3a5f]/20 bg-white p-2.5 shadow-sm">
       <div className="mb-2 flex items-center justify-between gap-2">
         <span className="flex items-center gap-1.5 text-xs font-bold text-[#1e3a5f]">
-          <Calculator className="h-3.5 w-3.5" /> Importo libero
+          <Calculator className="h-3.5 w-3.5" /> {isPaymentEntry ? "Incassato contanti" : "Importo libero"}
         </span>
         <span className="rounded-md bg-[#1e3a5f] px-2.5 py-1 text-lg font-bold tracking-wide text-white">
           € {amountText || "0,00"}
         </span>
       </div>
       <p className="mb-2 text-[11px] leading-tight text-gray-500">
-        Inserisci la cifra, poi scegli reparto e articolo. IVA e reparto vengono presi automaticamente dall'articolo.
+        {isPaymentEntry
+          ? "Inserisci la banconota ricevuta: l'importo viene usato solo per il pagamento in contanti."
+          : "Inserisci la cifra, poi scegli reparto e articolo. IVA e reparto vengono presi automaticamente dall'articolo."}
       </p>
       <div className="grid grid-cols-3 gap-2">
         {["1", "2", "3", "4", "5", "6", "7", "8", "9", ",", "0"].map(key => (
@@ -873,7 +913,9 @@ function FreeAmountKeyboard({
       </div>
       <div className="mt-2 flex items-center justify-between gap-2">
         <span className={`text-[11px] font-medium ${Number.isFinite(amount) && amount > 0 ? "text-green-700" : "text-gray-400"}`}>
-          {Number.isFinite(amount) && amount > 0 ? "Ora scegli un articolo" : "Digita un importo"}
+          {Number.isFinite(amount) && amount > 0
+            ? isPaymentEntry ? "Importo pronto per Contanti" : "Ora scegli un articolo"
+            : isPaymentEntry ? "Digita la banconota ricevuta" : "Digita un importo"}
         </span>
         <button type="button" onClick={() => appendKey("clear")} className="rounded-lg px-3 py-2 text-xs font-semibold text-red-500 hover:bg-red-50">
           Cancella cifra

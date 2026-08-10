@@ -8,7 +8,7 @@ import {
   type Catalog, type Reparto, type Articolo, type AliquotaIva,
   ALIQUOTE_IVA, NATURE_IVA, isNaturaIva,
 } from "@/lib/catalog";
-import { Plus, Pencil, Trash2, Check, Keyboard } from "lucide-react";
+import { Plus, Pencil, Trash2, Check, Keyboard, Ticket } from "lucide-react";
 import { BottomNav } from "@/components/bottom-nav";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -93,11 +93,22 @@ export default function AdminPage() {
 function GeneraliPanel({ catalog, onRefresh }: { catalog: Catalog; onRefresh: () => void }) {
   const [saving, setSaving] = useState(false);
   const tastieraFissa = catalog.impostazioni?.tastieraFissa ?? false;
+  const mostraTicket = catalog.impostazioni?.mostraTicket ?? false;
 
   const toggleTastiera = async (checked: boolean) => {
     setSaving(true);
     try {
       await updateImpostazioni({ tastieraFissa: checked });
+      onRefresh();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const toggleTicket = async (checked: boolean) => {
+    setSaving(true);
+    try {
+      await updateImpostazioni({ mostraTicket: checked });
       onRefresh();
     } finally {
       setSaving(false);
@@ -126,6 +137,18 @@ function GeneraliPanel({ catalog, onRefresh }: { catalog: Catalog; onRefresh: ()
       <p className="text-[11px] text-gray-400">
         Disattivando questa opzione tornerà disponibile il pulsante che apre la tastiera in una finestra.
       </p>
+      <div className="bg-white rounded-xl border p-4 shadow-sm flex items-start gap-3">
+        <div className="w-9 h-9 rounded-lg bg-[#1e3a5f]/10 text-[#1e3a5f] flex items-center justify-center shrink-0">
+          <Ticket className="w-4 h-4" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-gray-800">Mostra pagamento Ticket</p>
+          <p className="text-xs text-gray-500 mt-1">
+            Visualizza o nascondi la tab Ticket nella schermata di pagamento. Disattivala se usi raramente i buoni pasto.
+          </p>
+        </div>
+        <Switch checked={mostraTicket} disabled={saving} onCheckedChange={toggleTicket} />
+      </div>
     </div>
   );
 }

@@ -146,6 +146,7 @@ export default function HomePage() {
   const [showCart, setShowCart] = useState(false); // mobile overlay
   const [editIdx, setEditIdx] = useState<number | null>(null); // item being edited
   const [showFreeAmount, setShowFreeAmount] = useState(false);
+  const [fixedAmountText, setFixedAmountText] = useState("");
 
   // Payment
   const [modoPagamento, setModoPagamento] = useState<"contanti" | "elettronico" | "ticket">("contanti");
@@ -183,6 +184,25 @@ export default function HomePage() {
   // ── Cart actions ──────────────────────────────────────────────────────────
 
   const addToCart = useCallback((art: Articolo) => {
+    const amount = Number(fixedAmountText.replace(",", "."));
+
+    // Tastiera fissa: importo → articolo/reparto → pagamento.
+    // Reparto e IVA arrivano dall'articolo toccato, senza selezioni duplicate.
+    if (cat.impostazioni?.tastieraFissa && Number.isFinite(amount) && amount > 0) {
+      setCart(prev => [...prev, {
+        articoloId: "",
+        nome: `Importo libero · ${art.nome}`,
+        prezzoUnitario: Math.round(amount * 100) / 100,
+        aliquotaIva: art.aliquotaIva,
+        repartoId: art.repartoId,
+        quantita: 1,
+        sconto: 0,
+        omaggio: false,
+      }]);
+      setFixedAmountText("");
+      return;
+    }
+
     setCart(prev => {
       const idx = prev.findIndex(i => i.articoloId === art.id);
       if (idx >= 0) {
@@ -200,7 +220,7 @@ export default function HomePage() {
         omaggio: false,
       }];
     });
-  }, []);
+  }, [cat.impostazioni?.tastieraFissa, fixedAmountText]);
 
   const addFreeAmount = useCallback((amount: number, repartoId: string, aliquotaIva: AliquotaIva) => {
     const reparto = cat.reparti.find(r => r.id === repartoId);
@@ -473,6 +493,8 @@ export default function HomePage() {
             isPending={inviaMutation.isPending}
             reparti={cat.reparti}
             tastieraFissa={cat.impostazioni?.tastieraFissa ?? false}
+            fixedAmountText={fixedAmountText}
+            onFixedAmountTextChange={setFixedAmountText}
             onOpenFreeAmount={() => setShowFreeAmount(true)}
             onSaveFreeAmount={addFreeAmount}
             onOpenHistory={() => setLocation("/storico")}
@@ -527,6 +549,8 @@ export default function HomePage() {
               isPending={inviaMutation.isPending}
               reparti={cat.reparti}
               tastieraFissa={cat.impostazioni?.tastieraFissa ?? false}
+            fixedAmountText={fixedAmountText}
+            onFixedAmountTextChange={setFixedAmountText}
               onOpenFreeAmount={() => setShowFreeAmount(true)}
               onSaveFreeAmount={addFreeAmount}
               onOpenHistory={() => setLocation("/storico")}
@@ -584,6 +608,8 @@ interface CartPanelProps {
   isPending: boolean;
   reparti: Catalog["reparti"];
   tastieraFissa: boolean;
+  fixedAmountText: string;
+  onFixedAmountTextChange: (value: string) => void;
   onOpenFreeAmount: () => void;
   onSaveFreeAmount: (amount: number, repartoId: string, aliquotaIva: AliquotaIva) => void;
   onOpenHistory: () => void;
@@ -592,7 +618,8 @@ interface CartPanelProps {
 function CartPanel({ cart, totals, totalePagato, resto, modoPagamento, setModoPagamento,
   importoContanti, setImportoContanti, importoElettronico, setImportoElettronico,
   importoTicket, setImportoTicket, nTicket, setNTicket, lotteria, setLotteria,
-  onUpdateQty, onRemove, onEdit, onClear, onSubmit, isPending, reparti, tastieraFissa, onOpenFreeAmount, onSaveFreeAmount, onOpenHistory }: CartPanelProps) {
+  onUpdateQty, onRemove, onEdit, onClear, onSubmit, isPending, reparti, tastieraFissa,
+  fixedAmountText, onFixedAmountTextChange, onOpenFreeAmount, onSaveFreeAmount, onOpenHistory }: CartPanelProps) {
 
   const diff = totals.complessivo - totalePagato;
   const balanced = Math.abs(diff) < 0.01;
@@ -676,7 +703,10 @@ function CartPanel({ cart, totals, totalePagato, resto, modoPagamento, setModoPa
       </div>
 
       {tastieraFissa ? (
-        <FreeAmountKeyboard reparti={reparti} onSave={onSaveFreeAmount} />
+        <FreeAmountKeyboard
+          amountText={fixedAmountText}
+          onAmountTextChange={onFixedAmountTextChange}
+        />
       ) : (
         <button
           type="button"
@@ -706,12 +736,12 @@ function CartPanel({ cart, totals, totalePagato, resto, modoPagamento, setModoPa
           {/* Payment */}
           <div className="border-t px-4 py-3 space-y-3 shrink-0">
             {/* Mode buttons */}
-            <div className="grid grid-cols-3 gap-1.5">
+            <div className="grid grid-cols-3 gap-2">
               {(["contanti", "elettronico", "ticket"] as const).map(m => (
                 <button
                   key={m}
                   onClick={() => setModoPagamento(m)}
-                  className={`py-2 rounded-lg text-xs font-semibold transition-all ${modoPagamento === m ? 'bg-[#1e3a5f] text-white shadow' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+                  className={`h-12 md:h-11 rounded-xl px-1 text-sm md:text-xs font-bold transition-all active:scale-[0.98] ${modoPagamento === m ? 'bg-[#1e3a5f] text-white shadow' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
                 >
                   {m === "contanti" ? "💵 Contanti" : m === "elettronico" ? "💳 Carta" : "🎫 Ticket"}
                 </button>
@@ -723,12 +753,12 @@ function CartPanel({ cart, totals, totalePagato, resto, modoPagamento, setModoPa
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-gray-500 w-20 shrink-0">Incassato €</span>
-                  <CurrencyInput className="flex-1 h-9 rounded border px-3 text-right font-mono text-sm" value={importoContanti} onChange={setImportoContanti} />
+                  <CurrencyInput className="flex-1 h-11 md:h-10 rounded-lg border px-3 text-right font-mono text-base" value={importoContanti} onChange={setImportoContanti} />
                 </div>
                 {resto > 0 && (
-                  <div className="bg-green-50 border border-green-200 rounded-lg px-3 py-1.5 flex justify-between items-center">
-                    <span className="text-xs text-green-700 font-medium">Resto</span>
-                    <span className="font-mono font-bold text-green-700">€ {formatCurrency(resto)}</span>
+                <div className="bg-green-50 border border-green-200 rounded-lg px-3 py-2 flex justify-between items-center">
+                    <span className="text-sm text-green-700 font-medium">Resto</span>
+                    <span className="font-mono text-base font-bold text-green-700">€ {formatCurrency(resto)}</span>
                   </div>
                 )}
               </div>
@@ -736,14 +766,14 @@ function CartPanel({ cart, totals, totalePagato, resto, modoPagamento, setModoPa
             {modoPagamento === "elettronico" && (
               <div className="flex items-center gap-2">
                 <span className="text-xs text-gray-500 w-20 shrink-0">Importo €</span>
-                <CurrencyInput className="flex-1 h-9 rounded border px-3 text-right font-mono text-sm" value={importoElettronico} onChange={setImportoElettronico} />
+                <CurrencyInput className="flex-1 h-11 md:h-10 rounded-lg border px-3 text-right font-mono text-base" value={importoElettronico} onChange={setImportoElettronico} />
               </div>
             )}
             {modoPagamento === "ticket" && (
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-gray-500 w-20 shrink-0">Importo €</span>
-                  <CurrencyInput className="flex-1 h-9 rounded border px-3 text-right font-mono text-sm" value={importoTicket} onChange={setImportoTicket} />
+                  <CurrencyInput className="flex-1 h-11 md:h-10 rounded-lg border px-3 text-right font-mono text-base" value={importoTicket} onChange={setImportoTicket} />
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-gray-500 w-20 shrink-0">N° ticket</span>
@@ -769,7 +799,7 @@ function CartPanel({ cart, totals, totalePagato, resto, modoPagamento, setModoPa
             <button
               onClick={onSubmit}
               disabled={isPending || cart.length === 0}
-              className="w-full bg-[#1e3a5f] hover:bg-[#1e40af] disabled:opacity-50 text-white font-bold py-3.5 rounded-xl flex items-center justify-center gap-2 transition-colors shadow-lg active:scale-95"
+              className="w-full bg-[#1e3a5f] hover:bg-[#1e40af] disabled:opacity-50 text-white font-bold py-4 rounded-xl flex items-center justify-center gap-2 text-base transition-colors shadow-lg active:scale-95"
             >
               {isPending ? (
                 <span className="text-sm">Elaborazione...</span>
@@ -788,39 +818,25 @@ function CartPanel({ cart, totals, totalePagato, resto, modoPagamento, setModoPa
 }
 
 function FreeAmountKeyboard({
-  reparti,
-  onSave,
+  amountText,
+  onAmountTextChange,
 }: {
-  reparti: Catalog["reparti"];
-  onSave: (amount: number, repartoId: string, aliquotaIva: AliquotaIva) => void;
+  amountText: string;
+  onAmountTextChange: (value: string) => void;
 }) {
-  const [amountText, setAmountText] = useState("");
-  const [repartoId, setRepartoId] = useState(reparti[0]?.id ?? "");
-  const [aliquotaIva, setAliquotaIva] = useState<AliquotaIva>("22");
-
-  useEffect(() => {
-    if (!repartoId && reparti[0]?.id) setRepartoId(reparti[0].id);
-  }, [reparti, repartoId]);
-
   const appendKey = (key: string) => {
-    setAmountText(prev => {
+    onAmountTextChange((() => {
+      const prev = amountText;
       if (key === "backspace") return prev.slice(0, -1);
       if (key === "clear") return "";
       if (key === ",") return prev.includes(",") || prev.includes(".") ? prev : (prev || "0") + ",";
       if (prev.includes(",") && prev.split(",")[1]!.length >= 2) return prev;
       if (prev === "0" && key !== ",") return key;
       return prev + key;
-    });
+    })());
   };
 
   const amount = Number(amountText.replace(",", "."));
-  const canSave = Number.isFinite(amount) && amount > 0 && !!repartoId;
-
-  const save = () => {
-    if (!canSave) return;
-    onSave(Math.round(amount * 100) / 100, repartoId, aliquotaIva);
-    setAmountText("");
-  };
 
   return (
     <div className="mx-3 mb-2 shrink-0 rounded-xl border border-[#1e3a5f]/20 bg-white p-2.5 shadow-sm">
@@ -832,13 +848,16 @@ function FreeAmountKeyboard({
           € {amountText || "0,00"}
         </span>
       </div>
-      <div className="grid grid-cols-3 gap-1.5">
+      <p className="mb-2 text-[11px] leading-tight text-gray-500">
+        Inserisci la cifra, poi scegli reparto e articolo. IVA e reparto vengono presi automaticamente dall'articolo.
+      </p>
+      <div className="grid grid-cols-3 gap-2">
         {["1", "2", "3", "4", "5", "6", "7", "8", "9", ",", "0"].map(key => (
           <button
             key={key}
             type="button"
             onClick={() => appendKey(key)}
-            className="h-9 rounded-lg border bg-gray-50 text-base font-semibold text-gray-700 shadow-sm transition-colors hover:bg-gray-100 active:scale-95 sm:h-10"
+            className="h-11 rounded-lg border bg-gray-50 text-lg font-semibold text-gray-700 shadow-sm transition-colors hover:bg-gray-100 active:scale-95 md:h-10"
           >
             {key}
           </button>
@@ -847,31 +866,17 @@ function FreeAmountKeyboard({
           type="button"
           onClick={() => appendKey("backspace")}
           aria-label="Cancella ultima cifra"
-          className="flex h-9 items-center justify-center rounded-lg border bg-gray-100 text-gray-600 shadow-sm hover:bg-gray-200 active:scale-95 sm:h-10"
+          className="flex h-11 items-center justify-center rounded-lg border bg-gray-100 text-gray-600 shadow-sm hover:bg-gray-200 active:scale-95 md:h-10"
         >
           <Delete className="h-4 w-4" />
         </button>
       </div>
-      <div className="mt-2 grid grid-cols-2 gap-1.5">
-        <Select value={repartoId} onValueChange={setRepartoId}>
-          <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Reparto" /></SelectTrigger>
-          <SelectContent>
-            {reparti.map(reparto => <SelectItem key={reparto.id} value={reparto.id}>{reparto.nome}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        <Select value={aliquotaIva} onValueChange={value => setAliquotaIva(value as AliquotaIva)}>
-          <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            {IVA_OPTIONS.map(value => <SelectItem key={value} value={value}>{ivaLabel(value)}</SelectItem>)}
-          </SelectContent>
-        </Select>
-      </div>
-      <div className="mt-2 grid grid-cols-2 gap-1.5">
-        <button type="button" onClick={() => appendKey("clear")} className="h-9 rounded-lg text-xs font-semibold text-red-500 hover:bg-red-50">
-          Cancella
-        </button>
-        <button type="button" onClick={save} disabled={!canSave} className="h-9 rounded-lg bg-[#1e3a5f] text-xs font-bold text-white shadow disabled:cursor-not-allowed disabled:opacity-40">
-          Aggiungi
+      <div className="mt-2 flex items-center justify-between gap-2">
+        <span className={`text-[11px] font-medium ${Number.isFinite(amount) && amount > 0 ? "text-green-700" : "text-gray-400"}`}>
+          {Number.isFinite(amount) && amount > 0 ? "Ora scegli un articolo" : "Digita un importo"}
+        </span>
+        <button type="button" onClick={() => appendKey("clear")} className="rounded-lg px-3 py-2 text-xs font-semibold text-red-500 hover:bg-red-50">
+          Cancella cifra
         </button>
       </div>
     </div>

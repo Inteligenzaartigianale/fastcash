@@ -15,7 +15,7 @@ import {
   normalizeAliquotaIva,
 } from "@/lib/catalog";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { LogOut, ShoppingCart, Trash2, Plus, Minus, Pencil, Send, ChevronLeft, X } from "lucide-react";
+import { LogOut, ShoppingCart, Trash2, Plus, Minus, Pencil, Send, ChevronLeft, X, Delete, Calculator } from "lucide-react";
 import { BottomNav } from "@/components/bottom-nav";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,6 +31,7 @@ interface CartItem {
   nome: string;
   prezzoUnitario: number;
   aliquotaIva: AliquotaIva;
+  repartoId?: string;
   quantita: number;
   sconto: number;
   omaggio: boolean;
@@ -146,6 +147,7 @@ export default function HomePage() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [showCart, setShowCart] = useState(false); // mobile overlay
   const [editIdx, setEditIdx] = useState<number | null>(null); // item being edited
+  const [showFreeAmount, setShowFreeAmount] = useState(false);
 
   // Payment
   const [modoPagamento, setModoPagamento] = useState<"contanti" | "elettronico" | "ticket">("contanti");
@@ -200,6 +202,22 @@ export default function HomePage() {
       }];
     });
   }, []);
+
+  const addFreeAmount = useCallback((amount: number, repartoId: string, aliquotaIva: AliquotaIva) => {
+    const reparto = cat.reparti.find(r => r.id === repartoId);
+    setCart(prev => [...prev, {
+      // Le righe libere non hanno un articolo catalogo e quindi non modificano la giacenza.
+      articoloId: "",
+      nome: `Importo libero · ${reparto?.nome ?? "Senza reparto"}`,
+      prezzoUnitario: amount,
+      aliquotaIva,
+      repartoId,
+      quantita: 1,
+      sconto: 0,
+      omaggio: false,
+    }]);
+    setShowFreeAmount(false);
+  }, [cat.reparti]);
 
   const updateQty = (idx: number, delta: number) => {
     setCart(prev => {
@@ -458,6 +476,8 @@ export default function HomePage() {
             onClear={clearCart}
             onSubmit={handleSubmit}
             isPending={inviaMutation.isPending}
+            reparti={cat.reparti}
+            onAddFreeAmount={() => setShowFreeAmount(true)}
           />
         </div>
       </div>
@@ -507,6 +527,8 @@ export default function HomePage() {
               onClear={clearCart}
               onSubmit={handleSubmit}
               isPending={inviaMutation.isPending}
+              reparti={cat.reparti}
+              onAddFreeAmount={() => setShowFreeAmount(true)}
             />
           </div>
         </div>
@@ -518,6 +540,14 @@ export default function HomePage() {
           item={cart[editIdx]}
           onSave={(patch) => { updateItem(editIdx, patch); setEditIdx(null); }}
           onClose={() => setEditIdx(null)}
+        />
+      )}
+
+      {showFreeAmount && (
+        <FreeAmountDialog
+          reparti={cat.reparti}
+          onSave={addFreeAmount}
+          onClose={() => setShowFreeAmount(false)}
         />
       )}
 
@@ -551,12 +581,14 @@ interface CartPanelProps {
   onClear: () => void;
   onSubmit: () => void;
   isPending: boolean;
+  reparti: Catalog["reparti"];
+  onAddFreeAmount: () => void;
 }
 
 function CartPanel({ cart, totals, totalePagato, resto, modoPagamento, setModoPagamento,
   importoContanti, setImportoContanti, importoElettronico, setImportoElettronico,
   importoTicket, setImportoTicket, nTicket, setNTicket, lotteria, setLotteria,
-  onUpdateQty, onRemove, onEdit, onClear, onSubmit, isPending }: CartPanelProps) {
+  onUpdateQty, onRemove, onEdit, onClear, onSubmit, isPending, reparti, onAddFreeAmount }: CartPanelProps) {
 
   const diff = totals.complessivo - totalePagato;
   const balanced = Math.abs(diff) < 0.01;
@@ -579,7 +611,7 @@ function CartPanel({ cart, totals, totalePagato, resto, modoPagamento, setModoPa
       {/* Items */}
       <div className="flex-1 overflow-y-auto">
         {cart.length === 0 ? (
-          <div className="h-full flex items-center justify-center text-gray-300 text-sm">
+          <div className="min-h-[140px] h-full flex items-center justify-center text-gray-300 text-sm">
             Tocca un articolo per aggiungerlo
           </div>
         ) : (
@@ -619,6 +651,19 @@ function CartPanel({ cart, totals, totalePagato, resto, modoPagamento, setModoPa
           </div>
         )}
       </div>
+
+      <button
+        type="button"
+        onClick={onAddFreeAmount}
+        disabled={reparti.length === 0}
+        className="mx-3 mb-2 shrink-0 rounded-xl border-2 border-dashed border-[#1e3a5f]/30 bg-[#1e3a5f]/5 px-3 py-2.5 text-left text-[#1e3a5f] transition-colors hover:bg-[#1e3a5f]/10 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        <span className="flex items-center gap-2 text-sm font-semibold">
+          <Calculator className="h-4 w-4" />
+          Importo libero
+        </span>
+        <span className="mt-0.5 block pl-6 text-[10px] text-gray-500">Inserisci una cifra e scegli il reparto</span>
+      </button>
 
       {/* Totals */}
       {cart.length > 0 && (
@@ -712,6 +757,99 @@ function CartPanel({ cart, totals, totalePagato, resto, modoPagamento, setModoPa
         </>
       )}
     </div>
+  );
+}
+
+function FreeAmountDialog({
+  reparti,
+  onSave,
+  onClose,
+}: {
+  reparti: Catalog["reparti"];
+  onSave: (amount: number, repartoId: string, aliquotaIva: AliquotaIva) => void;
+  onClose: () => void;
+}) {
+  const [amountText, setAmountText] = useState("");
+  const [repartoId, setRepartoId] = useState(reparti[0]?.id ?? "");
+  const [aliquotaIva, setAliquotaIva] = useState<AliquotaIva>("22");
+
+  const appendKey = (key: string) => {
+    setAmountText(prev => {
+      if (key === "backspace") return prev.slice(0, -1);
+      if (key === "clear") return "";
+      if (key === ",") return prev.includes(",") || prev.includes(".") ? prev : (prev || "0") + ",";
+      if (prev.includes(",") && prev.split(",")[1]!.length >= 2) return prev;
+      if (prev === "0" && key !== ",") return key;
+      return prev + key;
+    });
+  };
+
+  const amount = Number(amountText.replace(",", "."));
+  const canSave = Number.isFinite(amount) && amount > 0 && !!repartoId;
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Calculator className="h-5 w-5 text-[#1e3a5f]" />
+            Importo libero
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 pt-1">
+          <div className="rounded-xl bg-[#1e3a5f] px-4 py-3 text-right text-3xl font-bold tracking-wide text-white">
+            € {amountText || "0,00"}
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            {["1", "2", "3", "4", "5", "6", "7", "8", "9", ",", "0"].map(key => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => appendKey(key)}
+                className="h-11 rounded-lg border bg-white text-lg font-semibold text-gray-700 shadow-sm transition-colors hover:bg-gray-50 active:scale-95"
+              >
+                {key}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => appendKey("backspace")}
+              aria-label="Cancella ultima cifra"
+              className="flex h-11 items-center justify-center rounded-lg border bg-gray-100 text-gray-600 shadow-sm hover:bg-gray-200 active:scale-95"
+            >
+              <Delete className="h-5 w-5" />
+            </button>
+          </div>
+          <button type="button" onClick={() => appendKey("clear")} className="w-full rounded-lg py-1.5 text-xs font-semibold text-red-500 hover:bg-red-50">
+            Cancella importo
+          </button>
+          <div className="space-y-1.5">
+            <Label>Reparto</Label>
+            <Select value={repartoId} onValueChange={setRepartoId}>
+              <SelectTrigger><SelectValue placeholder="Seleziona reparto" /></SelectTrigger>
+              <SelectContent>
+                {reparti.map(reparto => <SelectItem key={reparto.id} value={reparto.id}>{reparto.nome}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Aliquota IVA</Label>
+            <Select value={aliquotaIva} onValueChange={value => setAliquotaIva(value as AliquotaIva)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {IVA_OPTIONS.map(value => <SelectItem key={value} value={value}>{ivaLabel(value)}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex gap-2 pt-1">
+            <Button variant="outline" className="flex-1" onClick={onClose}>Annulla</Button>
+            <Button className="flex-1 bg-[#1e3a5f]" disabled={!canSave} onClick={() => onSave(Math.round(amount * 100) / 100, repartoId, aliquotaIva)}>
+              Aggiungi al carrello
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

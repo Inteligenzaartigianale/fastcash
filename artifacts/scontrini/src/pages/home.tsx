@@ -807,11 +807,12 @@ function CartPanel({ cart, totals, totalePagato, resto, modoPagamento, setModoPa
         )}
       </div>
 
-      {tastieraFissa && (cart.length === 0 || gestioneResto) ? (
+      {tastieraFissa ? (
         <FreeAmountKeyboard
           amountText={fixedAmountText}
           onAmountTextChange={onFixedAmountTextChange}
           isPaymentEntry={gestioneResto && cart.length > 0}
+          disabled={cart.length > 0 && !gestioneResto}
         />
       ) : (
         <button
@@ -935,10 +936,12 @@ function FreeAmountKeyboard({
   amountText,
   onAmountTextChange,
   isPaymentEntry,
+  disabled,
 }: {
   amountText: string;
   onAmountTextChange: (value: string) => void;
   isPaymentEntry: boolean;
+  disabled: boolean;
 }) {
   const appendKey = (key: string) => {
     onAmountTextChange((() => {
@@ -967,7 +970,9 @@ function FreeAmountKeyboard({
       <p className="mb-2 text-[11px] leading-tight text-gray-500">
         {isPaymentEntry
           ? "Inserisci la banconota ricevuta: l'importo viene usato solo per il pagamento in contanti."
-          : "Inserisci la cifra, poi scegli reparto e articolo. IVA e reparto vengono presi automaticamente dall'articolo."}
+          : disabled
+            ? "Il totale del carrello è già pronto per l’emissione. La tastiera resta visibile ma non modifica il pagamento."
+            : "Inserisci la cifra, poi scegli reparto e articolo. IVA e reparto vengono presi automaticamente dall'articolo."}
       </p>
       <div className="grid grid-cols-3 gap-2">
         {["1", "2", "3", "4", "5", "6", "7", "8", "9", ",", "0"].map(key => (
@@ -975,6 +980,7 @@ function FreeAmountKeyboard({
             key={key}
             type="button"
             onClick={() => appendKey(key)}
+            disabled={disabled}
             className="h-11 rounded-lg border bg-gray-50 text-lg font-semibold text-gray-700 shadow-sm transition-colors hover:bg-gray-100 active:scale-95 md:h-10"
           >
             {key}
@@ -983,8 +989,9 @@ function FreeAmountKeyboard({
         <button
           type="button"
           onClick={() => appendKey("backspace")}
+          disabled={disabled}
           aria-label="Cancella ultima cifra"
-          className="flex h-11 items-center justify-center rounded-lg border bg-gray-100 text-gray-600 shadow-sm hover:bg-gray-200 active:scale-95 md:h-10"
+          className="flex h-11 items-center justify-center rounded-lg border bg-gray-100 text-gray-600 shadow-sm hover:bg-gray-200 active:scale-95 disabled:opacity-40 md:h-10"
         >
           <Delete className="h-4 w-4" />
         </button>
@@ -993,9 +1000,9 @@ function FreeAmountKeyboard({
         <span className={`text-[11px] font-medium ${Number.isFinite(amount) && amount > 0 ? "text-green-700" : "text-gray-400"}`}>
           {Number.isFinite(amount) && amount > 0
             ? isPaymentEntry ? "Importo pronto per Contanti" : "Ora scegli un articolo"
-            : isPaymentEntry ? "Digita la banconota ricevuta" : "Digita un importo"}
+            : disabled ? "Pagamento già pronto" : isPaymentEntry ? "Digita la banconota ricevuta" : "Digita un importo"}
         </span>
-        <button type="button" onClick={() => appendKey("clear")} className="rounded-lg px-3 py-2 text-xs font-semibold text-red-500 hover:bg-red-50">
+        <button type="button" onClick={() => appendKey("clear")} disabled={disabled} className="rounded-lg px-3 py-2 text-xs font-semibold text-red-500 hover:bg-red-50 disabled:opacity-40">
           Cancella cifra
         </button>
       </div>

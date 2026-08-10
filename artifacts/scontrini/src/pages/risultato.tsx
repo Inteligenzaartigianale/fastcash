@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { CheckCircle2, Download, FileText, Plus, LogOut } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Download, FileText, Plus, LogOut } from "lucide-react";
 import { useLocation } from "wouter";
 import { useGetDocumento, useGetStampa, useLogout } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
@@ -92,9 +92,19 @@ export default function RisultatoPage() {
 
   return (
     <div className="min-h-[100dvh] flex flex-col bg-background">
-      <header className="bg-primary text-primary-foreground py-3 px-6 shadow-sm flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <FileText className="w-5 h-5" />
+      <header className="bg-primary text-primary-foreground py-3 px-4 sm:px-6 shadow-sm flex items-center justify-between">
+        <div className="flex items-center gap-2 min-w-0">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="shrink-0 text-primary-foreground hover:bg-primary-foreground/10 hover:text-white"
+            onClick={() => setLocation("/storico")}
+            aria-label="Torna allo storico"
+            title="Torna allo storico"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </Button>
+          <FileText className="w-5 h-5 shrink-0" />
           <h1 className="font-semibold tracking-wide">Documento Emesso</h1>
         </div>
         <Button variant="ghost" className="text-primary-foreground hover:bg-primary-foreground/10 hover:text-white" onClick={handleLogout} data-testid="button-logout">

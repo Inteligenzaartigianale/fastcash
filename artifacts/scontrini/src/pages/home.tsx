@@ -15,7 +15,7 @@ import {
   normalizeAliquotaIva,
 } from "@/lib/catalog";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { LogOut, ShoppingCart, Trash2, Plus, Minus, Pencil, Send, ChevronLeft, X, Delete, Calculator, ReceiptText, History, RefreshCw, CheckCircle2, XCircle } from "lucide-react";
+import { LogOut, ShoppingCart, Trash2, Plus, Minus, Pencil, Send, ChevronLeft, X, Delete, Calculator, ReceiptText, History, RefreshCw, CheckCircle2, XCircle, Download, FileText } from "lucide-react";
 import { BottomNav } from "@/components/bottom-nav";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -169,6 +169,12 @@ export default function HomePage() {
   const [nTicket, setNTicket] = useState("");
   const [tipoOp, setTipoOp] = useState("Vendita/Prestazione");
   const [lotteria, setLotteria] = useState("");
+  const [emissioneRiuscita, setEmissioneRiuscita] = useState<{
+    numeroDocumento: string;
+    dataEmissione?: string;
+    numeroProgressivo?: string;
+    pdfUrl?: string | null;
+  } | null>(null);
 
   // Derived catalog (catalog can be undefined while loading)
   const cat = catalog ?? emptyC;
@@ -361,7 +367,12 @@ export default function HomePage() {
         if (res.success) {
           queryClient.invalidateQueries({ queryKey: ["catalog"] });
           clearCart();
-          setLocation(`/risultato?id=${encodeURIComponent(res.id)}`);
+          setEmissioneRiuscita({
+            numeroDocumento: res.numeroDocumento,
+            dataEmissione: res.dataEmissione,
+            numeroProgressivo: res.numeroProgressivo,
+            pdfUrl: res.pdfUrl,
+          });
         }
       },
       onError: (err) => {
@@ -667,6 +678,56 @@ export default function HomePage() {
           onClose={() => setEditIdx(null)}
         />
       )}
+
+      <Dialog open={!!emissioneRiuscita} onOpenChange={open => !open && setEmissioneRiuscita(null)}>
+        <DialogContent className="w-[calc(100%-2rem)] max-w-sm rounded-xl p-0">
+          {emissioneRiuscita && (
+            <>
+              <DialogHeader className="border-b bg-emerald-50 px-4 py-3">
+                <DialogTitle className="flex items-center gap-2 text-base text-emerald-800">
+                  <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                  DCO emesso
+                </DialogTitle>
+                <p className="text-xs text-emerald-700">
+                  Documento accettato dall’Agenzia delle Entrate.
+                </p>
+              </DialogHeader>
+              <div className="space-y-3 px-4 py-4">
+                <div className="rounded-lg border bg-gray-50 px-3 py-2">
+                  <p className="text-[11px] text-gray-500">Numero documento</p>
+                  <p className="font-mono text-sm font-bold text-gray-800">{emissioneRiuscita.numeroDocumento}</p>
+                  {emissioneRiuscita.dataEmissione && (
+                    <p className="mt-0.5 text-[11px] text-gray-500">Data: {emissioneRiuscita.dataEmissione}</p>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 text-xs text-gray-500">
+                  <FileText className="h-4 w-4 text-[#1e3a5f]" />
+                  Il documento è stato archiviato nello storico.
+                </div>
+              </div>
+              <div className="flex gap-2 border-t bg-gray-50 px-4 py-3">
+                {emissioneRiuscita.pdfUrl && (
+                  <a
+                    href={emissioneRiuscita.pdfUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border bg-white px-3 py-2 text-xs font-semibold text-[#1e3a5f] hover:bg-blue-50"
+                  >
+                    <Download className="h-3.5 w-3.5" /> PDF
+                  </a>
+                )}
+                <Button
+                  type="button"
+                  onClick={() => setEmissioneRiuscita(null)}
+                  className="flex-1 bg-[#1e3a5f]"
+                >
+                  Torna alla cassa
+                </Button>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {showFreeAmount && (
         <FreeAmountDialog

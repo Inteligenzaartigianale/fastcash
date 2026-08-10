@@ -95,7 +95,7 @@ function GeneraliPanel({ catalog, onRefresh }: { catalog: Catalog; onRefresh: ()
   const tastieraFissa = catalog.impostazioni?.tastieraFissa ?? false;
   const mostraTicket = catalog.impostazioni?.mostraTicket ?? false;
   const gestioneResto = catalog.impostazioni?.gestioneResto ?? false;
-  const mostraTipoOperazione = catalog.impostazioni?.mostraTipoOperazione ?? true;
+  const mostraTipoOperazione = catalog.impostazioni?.mostraTipoOperazione ?? false;
 
   const toggleTastiera = async (checked: boolean) => {
     setSaving(true);

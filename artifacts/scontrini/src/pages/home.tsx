@@ -148,7 +148,7 @@ export default function HomePage() {
   const emptyC: Catalog = {
     reparti: [],
     articoli: [],
-    impostazioni: { importoMassimoDco: null, tastieraFissa: false, mostraTicket: false, gestioneResto: false, mostraTipoOperazione: true, dimensioneTasti: "S" },
+    impostazioni: { importoMassimoDco: null, tastieraFissa: false, mostraTicket: false, gestioneResto: false, mostraTipoOperazione: false, dimensioneTasti: "S" },
   };
 
   // Navigation
@@ -179,7 +179,7 @@ export default function HomePage() {
   const cat = catalog ?? emptyC;
   const articoloSize = cat.impostazioni?.dimensioneTasti ?? "S";
   const gestioneResto = cat.impostazioni?.gestioneResto ?? false;
-  const mostraTipoOperazione = cat.impostazioni?.mostraTipoOperazione ?? true;
+  const mostraTipoOperazione = cat.impostazioni?.mostraTipoOperazione ?? false;
   const articoloPx = SIZES.find(s => s.label === articoloSize)?.px ?? SIZES[0].px;
 
   const articoliFiltrati = useMemo(() => {

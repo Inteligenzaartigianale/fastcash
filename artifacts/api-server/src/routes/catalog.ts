@@ -25,7 +25,7 @@ router.get("/catalog", async (_req, res): Promise<void> => {
     tastieraFissa: false,
     mostraTicket: false,
     gestioneResto: false,
-    mostraTipoOperazione: true,
+    mostraTipoOperazione: false,
     dimensioneTasti: "S",
   };
   res.json({
@@ -87,7 +87,7 @@ router.put("/catalog/impostazioni", async (req, res): Promise<void> => {
       tastieraFissa: tastieraFissa ?? false,
       mostraTicket: mostraTicket ?? false,
       gestioneResto: gestioneResto ?? false,
-      mostraTipoOperazione: mostraTipoOperazione ?? true,
+      mostraTipoOperazione: mostraTipoOperazione ?? false,
       dimensioneTasti: dimensioneTasti ?? "S",
     })
     .onConflictDoUpdate({

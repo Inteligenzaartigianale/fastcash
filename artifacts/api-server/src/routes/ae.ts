@@ -437,9 +437,10 @@ router.post("/documenti/:id/annulla", async (req, res): Promise<void> => {
           ? new Date(originale.dataOraEmissione)
           : originale.createdAt,
       ),
-      progressivo: originale.numeroProgressivo.includes("/")
-        ? originale.numeroProgressivo.split("/").pop() ?? originale.numeroProgressivo
-        : originale.numeroProgressivo,
+      // For an annullo of a DCO emitted by this procedure, ADE expects the
+      // complete DCO progressivo (the shortened 9-digit form is for AX/RX,
+      // the non-recoverable/manual operation).
+      progressivo: originale.numeroProgressivo,
     },
   };
   const result = await aePost(
@@ -458,9 +459,13 @@ router.post("/documenti/:id/annulla", async (req, res): Promise<void> => {
 
   const aeResp = result.data as Record<string, unknown>;
   if (aeResp.esito === false || (Array.isArray(aeResp.errori) && aeResp.errori.length > 0)) {
+    logger.warn(
+      { esito: aeResp.esito, errori: aeResp.errori, progressivo: originale.numeroProgressivo },
+      "ADE rejected document annullo",
+    );
     res.status(422).json({
       error: "ADE ha rifiutato l'annullamento",
-      details: JSON.stringify(aeResp.errori),
+      details: JSON.stringify(aeResp.errori ?? aeResp),
     });
     return;
   }

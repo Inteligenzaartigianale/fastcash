@@ -13,6 +13,7 @@ export default function RisultatoPage() {
   const logoutMutation = useLogout();
   const annullaMutation = useAnnullaDocumento();
   const [showAnnulla, setShowAnnulla] = useState(false);
+  const [annullaError, setAnnullaError] = useState<string | null>(null);
   
   const documentId = new URLSearchParams(window.location.search).get("id") ?? "";
   const documentQuery = useGetDocumento(documentId, {
@@ -55,12 +56,18 @@ export default function RisultatoPage() {
   };
 
   const handleAnnulla = () => {
+    setAnnullaError(null);
     annullaMutation.mutate(
       { id: archivedDocument.id },
       {
         onSuccess: () => {
           setShowAnnulla(false);
           void documentQuery.refetch();
+        },
+        onError: (error) => {
+          const data = (error as { data?: { error?: string; details?: string | null } }).data;
+          const details = data?.details && data.details !== "undefined" ? data.details : null;
+          setAnnullaError(details ? `${data?.error ?? "ADE ha rifiutato l'annullamento"}: ${details}` : data?.error ?? error.message);
         },
       },
     );
@@ -154,9 +161,10 @@ export default function RisultatoPage() {
               </div>
             )}
             {annullaMutation.isError && (
-              <p className="text-sm text-red-600">
-                Impossibile annullare il documento. Verifica la sessione ADE e riprova.
-              </p>
+              <div className="w-full rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                <p className="font-semibold">ADE ha rifiutato l'annullamento.</p>
+                <p className="mt-1 break-words">{annullaError ?? "Verifica i dati del documento e la sessione ADE."}</p>
+              </div>
             )}
             <Button className="w-full" onClick={handleNuovo} data-testid="button-nuovo-doc">
               <Plus className="mr-2 h-4 w-4" />

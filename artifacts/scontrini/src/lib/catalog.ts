@@ -57,6 +57,7 @@ export interface Impostazioni {
   tastieraFissa: boolean;
   mostraTicket: boolean;
   gestioneResto: boolean;
+  mostraTipoOperazione: boolean;
   dimensioneTasti: "S" | "M" | "L" | "XL" | "XXL";
 }
 

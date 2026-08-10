@@ -148,7 +148,7 @@ export default function HomePage() {
   const emptyC: Catalog = {
     reparti: [],
     articoli: [],
-    impostazioni: { importoMassimoDco: null, tastieraFissa: false, mostraTicket: false, gestioneResto: false, dimensioneTasti: "S" },
+    impostazioni: { importoMassimoDco: null, tastieraFissa: false, mostraTicket: false, gestioneResto: false, mostraTipoOperazione: true, dimensioneTasti: "S" },
   };
 
   // Navigation
@@ -179,6 +179,7 @@ export default function HomePage() {
   const cat = catalog ?? emptyC;
   const articoloSize = cat.impostazioni?.dimensioneTasti ?? "S";
   const gestioneResto = cat.impostazioni?.gestioneResto ?? false;
+  const mostraTipoOperazione = cat.impostazioni?.mostraTipoOperazione ?? true;
   const articoloPx = SIZES.find(s => s.label === articoloSize)?.px ?? SIZES[0].px;
 
   const articoliFiltrati = useMemo(() => {
@@ -204,6 +205,10 @@ export default function HomePage() {
       setModoPagamento("contanti");
     }
   }, [cat.impostazioni?.mostraTicket, modoPagamento]);
+
+  useEffect(() => {
+    if (!mostraTipoOperazione) setTipoOp("Vendita/Prestazione");
+  }, [mostraTipoOperazione]);
 
   const totalePagato = modoPagamento === "contanti"
     ? (gestioneResto ? importoContanti : totals.complessivo)
@@ -484,16 +489,18 @@ export default function HomePage() {
                 ? "Estensione connessa"
                 : "Cookie da cambiare"}
           </button>
-          <Select value={tipoOp} onValueChange={setTipoOp}>
-            <SelectTrigger className="h-8 text-xs bg-white/10 border-white/20 text-white w-44 hidden sm:flex">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="Vendita/Prestazione">Vendita/Prestazione</SelectItem>
-              <SelectItem value="Reso">Reso</SelectItem>
-              <SelectItem value="Annullo">Annullo</SelectItem>
-            </SelectContent>
-          </Select>
+          {mostraTipoOperazione && (
+            <Select value={tipoOp} onValueChange={setTipoOp}>
+              <SelectTrigger className="h-8 text-xs bg-white/10 border-white/20 text-white w-44 hidden sm:flex">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Vendita/Prestazione">Vendita/Prestazione</SelectItem>
+                <SelectItem value="Reso">Reso</SelectItem>
+                <SelectItem value="Annullo">Annullo</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
           <Button variant="ghost" size="sm" className="text-white/70 hover:text-white hover:bg-white/10 h-8 w-8 p-0" onClick={() => logoutMutation.mutate(undefined, { onSettled: () => setLocation('/login') })}>
             <LogOut className="w-4 h-4" />
           </Button>

@@ -1,4 +1,4 @@
-import { pgTable, text, numeric, boolean, integer, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, numeric, boolean, integer, timestamp, date, jsonb, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -26,8 +26,43 @@ export const impostazioniTable = pgTable("impostazioni", {
   id:               text("id").primaryKey(),
   importoMassimoDco: numeric("importo_massimo_dco", { precision: 10, scale: 2 }),
   tastieraFissa:    boolean("tastiera_fissa").notNull().default(false),
+  dimensioneTasti:  text("dimensione_tasti").notNull().default("S"),
   updatedAt:        timestamp("updated_at").defaultNow().notNull(),
 });
+
+export interface DocumentoArchiviatoRiga {
+  quantita: number;
+  descrizione: string;
+  prezzoUnitario: number;
+  aliquotaIva: string;
+  articoloId?: string;
+  sconto?: number;
+  omaggio?: boolean;
+}
+
+export interface DocumentoArchiviatoPagamento {
+  contanti?: number;
+  elettronico?: number;
+  ticketRestaurant?: number;
+  numeroTicket?: string;
+  scontoAPagare?: number;
+  documentoCollegato?: string;
+}
+
+export const documentiTable = pgTable("documenti", {
+  id:                text("id").primaryKey(),
+  numeroDocumento:   text("numero_documento").notNull(),
+  numeroProgressivo: text("numero_progressivo"),
+  dataEmissione:     date("data_emissione", { mode: "string" }).notNull(),
+  tipoOperazione:    text("tipo_operazione").notNull(),
+  totale:            numeric("totale", { precision: 10, scale: 2 }).notNull(),
+  codiceLotteria:    text("codice_lotteria"),
+  righe:             jsonb("righe").$type<DocumentoArchiviatoRiga[]>().notNull(),
+  pagamento:         jsonb("pagamento").$type<DocumentoArchiviatoPagamento>().notNull(),
+  createdAt:         timestamp("created_at").defaultNow().notNull(),
+}, table => ({
+  dataEmissioneIdx: index("documenti_data_emissione_idx").on(table.dataEmissione),
+}));
 
 export const insertRepartoSchema = createInsertSchema(repartiTable).omit({ createdAt: true });
 export const insertArticoloSchema = createInsertSchema(articoliTable).omit({ createdAt: true });
@@ -36,3 +71,4 @@ export const insertImpostazioniSchema = createInsertSchema(impostazioniTable).om
 export type Reparto  = typeof repartiTable.$inferSelect;
 export type Articolo = typeof articoliTable.$inferSelect;
 export type Impostazioni = typeof impostazioniTable.$inferSelect;
+export type DocumentoArchiviato = typeof documentiTable.$inferSelect;

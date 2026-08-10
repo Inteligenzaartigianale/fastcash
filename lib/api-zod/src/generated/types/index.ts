@@ -7,11 +7,13 @@
  */
 
 export * from './authStatus';
+export * from './documentoArchiviato';
 export * from './documentoInput';
 export * from './documentoInputCorrispettivoNonRiscosso';
 export * from './documentoResult';
 export * from './errorResponse';
 export * from './healthStatus';
+export * from './listDocumentiParams';
 export * from './loginInput';
 export * from './loginResult';
 export * from './pagamentoInput';

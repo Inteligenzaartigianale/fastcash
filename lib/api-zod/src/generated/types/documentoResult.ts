@@ -14,4 +14,5 @@ export interface DocumentoResult {
   dataEmissione?: string;
   /** @nullable */
   pdfUrl?: string | null;
+  id: string;
 }

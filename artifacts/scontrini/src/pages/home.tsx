@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import { useGetMe, useInviaDocumento, useLogout } from "@workspace/api-client-react";
 import { useRequireAuth } from "@/hooks/use-require-auth";
 import { formatCurrency } from "@/lib/utils";
-import { useArticoloSize } from "@/lib/articolo-size";
+import { SIZES } from "@/lib/articolo-size";
 import { useToast } from "@/hooks/use-toast";
 import {
   fetchCatalog,
@@ -15,7 +15,7 @@ import {
   normalizeAliquotaIva,
 } from "@/lib/catalog";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { LogOut, ShoppingCart, Trash2, Plus, Minus, Pencil, Send, ChevronLeft, X, Delete, Calculator } from "lucide-react";
+import { LogOut, ShoppingCart, Trash2, Plus, Minus, Pencil, Send, ChevronLeft, X, Delete, Calculator, ReceiptText, History } from "lucide-react";
 import { BottomNav } from "@/components/bottom-nav";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -79,10 +79,7 @@ export default function HomePage() {
   const logoutMutation = useLogout();
   const inviaMutation = useInviaDocumento();
   const [extensionConnecting, setExtensionConnecting] = useState(false);
-  const [extensionConnected, setExtensionConnected] = useState(() =>
-    localStorage.getItem("scontrini_extension_connected") === "true" ||
-    !!isAuthenticated,
-  );
+  const [extensionConnected, setExtensionConnected] = useState(() => !!isAuthenticated);
 
   // Se l'API ha una sessione attiva, l'estensione ha già consegnato i cookie.
   // Non usare l'errore di /ae/me per colorare il pulsante: è una verifica
@@ -90,7 +87,6 @@ export default function HomePage() {
   useEffect(() => {
     if (isAuthenticated) {
       setExtensionConnected(true);
-      localStorage.setItem("scontrini_extension_connected", "true");
     }
   }, [isAuthenticated]);
 
@@ -109,12 +105,10 @@ export default function HomePage() {
       setExtensionConnecting(false);
       if (event.data.success) {
         setExtensionConnected(true);
-        localStorage.setItem("scontrini_extension_connected", "true");
         toast({ title: "Estensione connessa", description: "Cookie inviati correttamente all'app." });
         queryClient.invalidateQueries({ queryKey: meQuery.queryKey });
       } else {
         setExtensionConnected(false);
-        localStorage.removeItem("scontrini_extension_connected");
         toast({
           title: "Connessione non riuscita",
           description: event.data.error || "Apri ADE e accedi a Documento Commerciale Online.",
@@ -138,7 +132,11 @@ export default function HomePage() {
 
   // Catalog from DB
   const { data: catalog } = useQuery({ queryKey: ["catalog"], queryFn: fetchCatalog });
-  const emptyC: Catalog = { reparti: [], articoli: [], impostazioni: { importoMassimoDco: null, tastieraFissa: false } };
+  const emptyC: Catalog = {
+    reparti: [],
+    articoli: [],
+    impostazioni: { importoMassimoDco: null, tastieraFissa: false, dimensioneTasti: "S" },
+  };
 
   // Navigation
   const [repartoId, setRepartoId] = useState<string | null>(null);
@@ -160,7 +158,8 @@ export default function HomePage() {
 
   // Derived catalog (catalog can be undefined while loading)
   const cat = catalog ?? emptyC;
-  const { px: articoloPx } = useArticoloSize();
+  const articoloSize = cat.impostazioni?.dimensioneTasti ?? "S";
+  const articoloPx = SIZES.find(s => s.label === articoloSize)?.px ?? SIZES[0].px;
 
   const articoliFiltrati = useMemo(() => {
     return cat.articoli.filter(a => {
@@ -292,12 +291,8 @@ export default function HomePage() {
       onSuccess: (res) => {
         if (res.success) {
           queryClient.invalidateQueries({ queryKey: ["catalog"] });
-          sessionStorage.setItem("scontrino_result", JSON.stringify(res));
-          sessionStorage.setItem("scontrino_rows", JSON.stringify(cart.map(i => ({
-            quantita: i.quantita, descrizione: i.nome, prezzoUnitario: i.prezzoUnitario, aliquotaIva: i.aliquotaIva,
-          }))));
           clearCart();
-          setLocation("/risultato");
+          setLocation(`/risultato?id=${encodeURIComponent(res.id)}`);
         }
       },
       onError: (err) => {
@@ -480,6 +475,7 @@ export default function HomePage() {
             tastieraFissa={cat.impostazioni?.tastieraFissa ?? false}
             onOpenFreeAmount={() => setShowFreeAmount(true)}
             onSaveFreeAmount={addFreeAmount}
+            onOpenHistory={() => setLocation("/storico")}
           />
         </div>
       </div>
@@ -533,6 +529,7 @@ export default function HomePage() {
               tastieraFissa={cat.impostazioni?.tastieraFissa ?? false}
               onOpenFreeAmount={() => setShowFreeAmount(true)}
               onSaveFreeAmount={addFreeAmount}
+              onOpenHistory={() => setLocation("/storico")}
             />
           </div>
         </div>
@@ -589,12 +586,13 @@ interface CartPanelProps {
   tastieraFissa: boolean;
   onOpenFreeAmount: () => void;
   onSaveFreeAmount: (amount: number, repartoId: string, aliquotaIva: AliquotaIva) => void;
+  onOpenHistory: () => void;
 }
 
 function CartPanel({ cart, totals, totalePagato, resto, modoPagamento, setModoPagamento,
   importoContanti, setImportoContanti, importoElettronico, setImportoElettronico,
   importoTicket, setImportoTicket, nTicket, setNTicket, lotteria, setLotteria,
-  onUpdateQty, onRemove, onEdit, onClear, onSubmit, isPending, reparti, tastieraFissa, onOpenFreeAmount, onSaveFreeAmount }: CartPanelProps) {
+  onUpdateQty, onRemove, onEdit, onClear, onSubmit, isPending, reparti, tastieraFissa, onOpenFreeAmount, onSaveFreeAmount, onOpenHistory }: CartPanelProps) {
 
   const diff = totals.complessivo - totalePagato;
   const balanced = Math.abs(diff) < 0.01;
@@ -607,11 +605,30 @@ function CartPanel({ cart, totals, totalePagato, resto, modoPagamento, setModoPa
           <ShoppingCart className="w-4 h-4" />
           Carrello {cart.length > 0 && <span className="text-xs bg-gray-100 text-gray-500 rounded-full px-2 py-0.5">{cart.reduce((s, i) => s + i.quantita, 0)}</span>}
         </h2>
-        {cart.length > 0 && (
-          <button onClick={onClear} className="text-xs text-red-400 hover:text-red-600 flex items-center gap-1">
-            <Trash2 className="w-3 h-3" /> Svuota
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={onOpenHistory}
+            className="flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] font-semibold text-[#1e3a5f] hover:bg-blue-50"
+            title="Apri elenco scontrini"
+          >
+            <ReceiptText className="h-3.5 w-3.5" /> Scontrini
           </button>
-        )}
+          <button
+            type="button"
+            onClick={onOpenHistory}
+            className="flex h-7 w-7 items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 hover:text-[#1e3a5f]"
+            title="Apri storico scontrini"
+            aria-label="Apri storico scontrini"
+          >
+            <History className="h-4 w-4" />
+          </button>
+          {cart.length > 0 && (
+            <button onClick={onClear} className="ml-1 flex items-center gap-1 text-xs text-red-400 hover:text-red-600">
+              <Trash2 className="w-3 h-3" /> Svuota
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Items */}

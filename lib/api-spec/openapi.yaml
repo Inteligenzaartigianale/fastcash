@@ -136,6 +136,69 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /documenti:
+    get:
+      operationId: listDocumenti
+      tags: [documenti]
+      summary: Elenca i documenti commerciali archiviati
+      parameters:
+        - name: dataDa
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: dataA
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: Elenco documenti
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DocumentoArchiviato"
+        "401":
+          description: Sessione scaduta
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /documenti/{id}:
+    get:
+      operationId: getDocumento
+      tags: [documenti]
+      summary: Recupera un documento commerciale archiviato
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Documento archiviato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentoArchiviato"
+        "401":
+          description: Sessione scaduta
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Documento non trovato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /ae/stampa/{numeroProgressivo}:
     get:
       operationId: getStampa
@@ -297,7 +360,7 @@ components:
 
     DocumentoResult:
       type: object
-      required: [success, numeroDocumento]
+      required: [success, id, numeroDocumento]
       properties:
         success:
           type: boolean
@@ -310,6 +373,34 @@ components:
           type: string
         pdfUrl:
           type: ["string", "null"]
+        id:
+          type: string
+
+    DocumentoArchiviato:
+      type: object
+      required: [id, numeroDocumento, dataEmissione, tipoOperazione, totale, righe, pagamento]
+      properties:
+        id:
+          type: string
+        numeroDocumento:
+          type: string
+        numeroProgressivo:
+          type: ["string", "null"]
+        dataEmissione:
+          type: string
+          format: date
+        tipoOperazione:
+          type: string
+        totale:
+          type: number
+        codiceLotteria:
+          type: ["string", "null"]
+        righe:
+          type: array
+          items:
+            $ref: "#/components/schemas/RigaDocumento"
+        pagamento:
+          $ref: "#/components/schemas/PagamentoInput"
 
     SuccessResponse:
       type: object

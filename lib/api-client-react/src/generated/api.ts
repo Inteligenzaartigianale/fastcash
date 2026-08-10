@@ -21,10 +21,12 @@ import type {
 
 import type {
   AuthStatus,
+  DocumentoArchiviato,
   DocumentoInput,
   DocumentoResult,
   ErrorResponse,
   HealthStatus,
+  ListDocumentiParams,
   LoginInput,
   LoginResult,
   SuccessResponse,
@@ -501,6 +503,167 @@ export const useInviaDocumento = <TError = ErrorType<ErrorResponse>,
       > => {
       return useMutation(getInviaDocumentoMutationOptions(options));
     }
+
+export const getListDocumentiUrl = (params?: ListDocumentiParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/documenti?${stringifiedParams}` : `/api/documenti`
+}
+
+/**
+ * @summary Elenca i documenti commerciali archiviati
+ */
+export const listDocumenti = async (params?: ListDocumentiParams, options?: RequestInit): Promise<DocumentoArchiviato[]> => {
+
+  return customFetch<DocumentoArchiviato[]>(getListDocumentiUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListDocumentiQueryKey = (params?: ListDocumentiParams,) => {
+    return [
+    `/api/documenti`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListDocumentiQueryOptions = <TData = Awaited<ReturnType<typeof listDocumenti>>, TError = ErrorType<ErrorResponse>>(params?: ListDocumentiParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listDocumenti>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListDocumentiQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listDocumenti>>> = ({ signal }) => listDocumenti(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listDocumenti>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListDocumentiQueryResult = NonNullable<Awaited<ReturnType<typeof listDocumenti>>>
+export type ListDocumentiQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Elenca i documenti commerciali archiviati
+ */
+
+export function useListDocumenti<TData = Awaited<ReturnType<typeof listDocumenti>>, TError = ErrorType<ErrorResponse>>(
+ params?: ListDocumentiParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listDocumenti>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListDocumentiQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetDocumentoUrl = (id: string,) => {
+
+
+
+
+  return `/api/documenti/${id}`
+}
+
+/**
+ * @summary Recupera un documento commerciale archiviato
+ */
+export const getDocumento = async (id: string, options?: RequestInit): Promise<DocumentoArchiviato> => {
+
+  return customFetch<DocumentoArchiviato>(getGetDocumentoUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetDocumentoQueryKey = (id: string,) => {
+    return [
+    `/api/documenti/${id}`
+    ] as const;
+    }
+
+
+export const getGetDocumentoQueryOptions = <TData = Awaited<ReturnType<typeof getDocumento>>, TError = ErrorType<ErrorResponse>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDocumento>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetDocumentoQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getDocumento>>> = ({ signal }) => getDocumento(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getDocumento>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetDocumentoQueryResult = NonNullable<Awaited<ReturnType<typeof getDocumento>>>
+export type GetDocumentoQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Recupera un documento commerciale archiviato
+ */
+
+export function useGetDocumento<TData = Awaited<ReturnType<typeof getDocumento>>, TError = ErrorType<ErrorResponse>>(
+ id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDocumento>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetDocumentoQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getGetStampaUrl = (numeroProgressivo: string,) => {
 

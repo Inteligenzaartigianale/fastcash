@@ -1,40 +1,56 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { CheckCircle2, Download, FileText, Plus, LogOut } from "lucide-react";
 import { useLocation } from "wouter";
-import { useGetStampa, useLogout } from "@workspace/api-client-react";
+import { useGetDocumento, useGetStampa, useLogout } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
-import { DocumentoResult, RigaDocumento } from "@workspace/api-client-react/src/generated/api.schemas";
+import type { DocumentoResult, RigaDocumento } from "@workspace/api-client-react";
 import { formatCurrency } from "@/lib/utils";
 import { ivaLabel } from "@/lib/catalog";
 
-// Wouter doesn't have built-in location state, so we'll use a hack by storing result in sessionStorage
-// In a real app we might use a context or global store
 export default function RisultatoPage() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const logoutMutation = useLogout();
   
-  // Read from session storage
-  const storedResult = sessionStorage.getItem("scontrino_result");
-  const storedRows = sessionStorage.getItem("scontrino_rows");
-  
-  if (!storedResult) {
-    setLocation("/");
-    return null;
-  }
-  
-  const result: DocumentoResult = JSON.parse(storedResult);
-  const rows: RigaDocumento[] = storedRows ? JSON.parse(storedRows) : [];
+  const documentId = new URLSearchParams(window.location.search).get("id") ?? "";
+  const documentQuery = useGetDocumento(documentId, {
+    query: {
+      enabled: !!documentId,
+      queryKey: ["/api/documenti", documentId],
+    },
+  });
+  const archivedDocument = documentQuery.data;
+
+  useEffect(() => {
+    if (!documentId || (!documentQuery.isLoading && !archivedDocument)) {
+      setLocation("/");
+    }
+  }, [documentId, documentQuery.isLoading, archivedDocument, setLocation]);
 
   const [downloading, setDownloading] = useState(false);
 
-  const { refetch: fetchStampa } = useGetStampa(result.numeroProgressivo || "", {
+  const { refetch: fetchStampa } = useGetStampa(archivedDocument?.numeroProgressivo || "", {
     query: {
       enabled: false,
+      queryKey: ["/api/ae/stampa", archivedDocument?.numeroProgressivo || ""],
     }
   });
+
+  if (documentQuery.isLoading || !archivedDocument) {
+    return <div className="min-h-[100dvh] flex items-center justify-center bg-background text-sm text-muted-foreground">Caricamento documento...</div>;
+  }
+
+  const result: DocumentoResult = {
+    success: true,
+    id: archivedDocument.id,
+    numeroDocumento: archivedDocument.numeroDocumento,
+    numeroProgressivo: archivedDocument.numeroProgressivo ?? "",
+    dataEmissione: archivedDocument.dataEmissione,
+    pdfUrl: archivedDocument.numeroProgressivo ? `/api/ae/stampa/${encodeURIComponent(archivedDocument.numeroProgressivo)}` : null,
+  };
+  const rows: RigaDocumento[] = archivedDocument.righe;
 
   const handleDownload = async () => {
     if (!result.numeroProgressivo) return;
@@ -45,10 +61,10 @@ export default function RisultatoPage() {
       if (!data) throw new Error("Errore durante il download");
       
       const url = window.URL.createObjectURL(data as Blob);
-      const a = document.createElement("a");
+      const a = window.document.createElement("a");
       a.href = url;
       a.download = `Documento_${result.numeroDocumento.replace(/\//g, '_')}.pdf`;
-      document.body.appendChild(a);
+      window.document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
     } catch (e) {
@@ -65,16 +81,12 @@ export default function RisultatoPage() {
   const handleLogout = () => {
     logoutMutation.mutate(undefined, {
       onSettled: () => {
-        sessionStorage.removeItem("scontrino_result");
-        sessionStorage.removeItem("scontrino_rows");
         setLocation("/login");
       }
     });
   };
 
   const handleNuovo = () => {
-    sessionStorage.removeItem("scontrino_result");
-    sessionStorage.removeItem("scontrino_rows");
     setLocation("/");
   };
 

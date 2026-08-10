@@ -18,14 +18,13 @@ import { Label } from "@/components/ui/label";
 import { CurrencyInput } from "@/components/currency-input";
 import { Switch } from "@/components/ui/switch";
 
-import { useArticoloSize, SIZES } from "@/lib/articolo-size";
+import { SIZES } from "@/lib/articolo-size";
 
 const IVA_OPTIONS: AliquotaIva[] = ["22", "10", "5", "4", "N1", "N2", "N3", "N4", "N5", "N6"];
 const COLORI = ["#ef4444","#f97316","#eab308","#22c55e","#14b8a6","#3b82f6","#8b5cf6","#ec4899","#6b7280","#1e3a5f"];
 
 export default function AdminPage() {
   const [tab, setTab] = useState<"generali" | "reparti" | "articoli" | "aliquote" | "visualizzazione">("generali");
-  const { size, setSize } = useArticoloSize();
   const qc = useQueryClient();
   const { data: catalog, isLoading } = useQuery({ queryKey: ["catalog"], queryFn: fetchCatalog });
   const invalidate = () => qc.invalidateQueries({ queryKey: ["catalog"] });
@@ -37,6 +36,11 @@ export default function AdminPage() {
       </div>
     );
   }
+
+  const size = catalog.impostazioni?.dimensioneTasti ?? "S";
+  const setSize = (value: typeof size) => {
+    updateImpostazioni({ dimensioneTasti: value }).then(invalidate);
+  };
 
   return (
     <div className="h-[100dvh] flex flex-col bg-gray-50">

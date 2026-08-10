@@ -19,7 +19,7 @@ router.get("/catalog", async (_req, res): Promise<void> => {
     db.select().from(articoliTable).orderBy(articoliTable.createdAt),
     db.select().from(impostazioniTable).limit(1),
   ]);
-  const settings = settingsRows[0] ?? { id: "default", importoMassimoDco: null, tastieraFissa: false };
+  const settings = settingsRows[0] ?? { id: "default", importoMassimoDco: null, tastieraFissa: false, dimensioneTasti: "S" };
   res.json({
     reparti,
     articoli: articoli.map(a => ({
@@ -30,6 +30,7 @@ router.get("/catalog", async (_req, res): Promise<void> => {
     impostazioni: {
       importoMassimoDco: settings.importoMassimoDco == null ? null : parseFloat(settings.importoMassimoDco),
       tastieraFissa: settings.tastieraFissa,
+      dimensioneTasti: settings.dimensioneTasti,
     },
   });
 });
@@ -38,12 +39,17 @@ router.put("/catalog/impostazioni", async (req, res): Promise<void> => {
   const raw = req.body?.importoMassimoDco;
   const value = raw === null || raw === "" || raw === undefined ? null : Number(raw);
   const tastieraFissa = req.body?.tastieraFissa;
+  const dimensioneTasti = req.body?.dimensioneTasti;
   if (value !== null && (!Number.isFinite(value) || value < 0)) {
     res.status(400).json({ error: "L'importo massimo deve essere un numero positivo o vuoto" });
     return;
   }
   if (tastieraFissa !== undefined && typeof tastieraFissa !== "boolean") {
     res.status(400).json({ error: "Il valore della tastiera fissa non è valido" });
+    return;
+  }
+  if (dimensioneTasti !== undefined && !["S", "M", "L", "XL", "XXL"].includes(dimensioneTasti)) {
+    res.status(400).json({ error: "La dimensione dei tasti non è valida" });
     return;
   }
 
@@ -53,6 +59,7 @@ router.put("/catalog/impostazioni", async (req, res): Promise<void> => {
       id: "default",
       importoMassimoDco: value === null ? null : value.toFixed(2),
       tastieraFissa: tastieraFissa ?? false,
+      dimensioneTasti: dimensioneTasti ?? "S",
     })
     .onConflictDoUpdate({
       target: impostazioniTable.id,
@@ -61,6 +68,7 @@ router.put("/catalog/impostazioni", async (req, res): Promise<void> => {
           ? { importoMassimoDco: value === null ? null : value.toFixed(2) }
           : {}),
         ...(tastieraFissa !== undefined ? { tastieraFissa } : {}),
+        ...(dimensioneTasti !== undefined ? { dimensioneTasti } : {}),
         updatedAt: new Date(),
       },
     })
@@ -68,6 +76,7 @@ router.put("/catalog/impostazioni", async (req, res): Promise<void> => {
   res.json({
     importoMassimoDco: row.importoMassimoDco == null ? null : parseFloat(row.importoMassimoDco),
     tastieraFissa: row.tastieraFissa,
+    dimensioneTasti: row.dimensioneTasti,
   });
 });
 

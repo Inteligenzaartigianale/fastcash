@@ -90,6 +90,21 @@ export interface DocumentoResult {
   dataEmissione?: string;
   /** @nullable */
   pdfUrl?: string | null;
+  id: string;
+}
+
+export interface DocumentoArchiviato {
+  id: string;
+  numeroDocumento: string;
+  /** @nullable */
+  numeroProgressivo?: string | null;
+  dataEmissione: string;
+  tipoOperazione: string;
+  totale: number;
+  /** @nullable */
+  codiceLotteria?: string | null;
+  righe: RigaDocumento[];
+  pagamento: PagamentoInput;
 }
 
 export interface SuccessResponse {
@@ -101,4 +116,9 @@ export interface ErrorResponse {
   /** @nullable */
   details?: string | null;
 }
+
+export type ListDocumentiParams = {
+dataDa?: string;
+dataA?: string;
+};
 

@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { sql } from "drizzle-orm";
-import { db, impostazioniTable } from "@workspace/db";
+import { db, documentiTable, impostazioniTable } from "@workspace/db";
 import { getSession, isSessionValid, setSession } from "../lib/session.js";
 import { loginWithSiampe } from "../lib/siampe-login.js";
 import {
@@ -10,6 +10,7 @@ import {
   GetStampaParams,
 } from "@workspace/api-zod";
 import { logger } from "../lib/logger.js";
+import { randomUUID } from "node:crypto";
 
 const router: IRouter = Router();
 
@@ -263,12 +264,27 @@ router.post("/ae/documenti", async (req, res): Promise<void> => {
   }
 
   const progressivo = aeResp.progressivo as string | undefined;
+  const dataEmissione = new Date().toISOString().split("T")[0]!;
+  const documentId = randomUUID();
+
+  await db.insert(documentiTable).values({
+    id: documentId,
+    numeroDocumento: progressivo ?? `DCW${new Date().getFullYear()}`,
+    numeroProgressivo: progressivo ?? null,
+    dataEmissione,
+    tipoOperazione: input.tipoOperazione,
+    totale: importoDco.toFixed(2),
+    codiceLotteria: input.codiceLotteria ?? null,
+    righe: input.righe,
+    pagamento: input.pagamento,
+  });
 
   const docResult = InviaDocumentoResponse.parse({
     success: true,
+    id: documentId,
     numeroDocumento: progressivo ?? `DCW${new Date().getFullYear()}`,
     numeroProgressivo: progressivo ?? "",
-    dataEmissione: new Date().toISOString().split("T")[0]!,
+    dataEmissione,
     pdfUrl: progressivo ? `/api/ae/stampa/${encodeURIComponent(progressivo)}` : null,
   });
 

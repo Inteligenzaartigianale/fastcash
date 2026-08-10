@@ -102,7 +102,80 @@ export const InviaDocumentoResponse = zod.object({
   "numeroDocumento": zod.string().describe('Es: DCW2026\/1252-9663'),
   "numeroProgressivo": zod.string().optional(),
   "dataEmissione": zod.string().optional(),
-  "pdfUrl": zod.string().nullish()
+  "pdfUrl": zod.string().nullish(),
+  "id": zod.string()
+})
+
+
+/**
+ * @summary Elenca i documenti commerciali archiviati
+ */
+export const ListDocumentiQueryParams = zod.object({
+  "dataDa": zod.date().optional(),
+  "dataA": zod.date().optional()
+})
+
+export const ListDocumentiResponseItem = zod.object({
+  "id": zod.string(),
+  "numeroDocumento": zod.string(),
+  "numeroProgressivo": zod.string().nullish(),
+  "dataEmissione": zod.coerce.date(),
+  "tipoOperazione": zod.string(),
+  "totale": zod.number(),
+  "codiceLotteria": zod.string().nullish(),
+  "righe": zod.array(zod.object({
+  "quantita": zod.number(),
+  "descrizione": zod.string(),
+  "prezzoUnitario": zod.number(),
+  "aliquotaIva": zod.string().describe('Percentuale IVA (4, 5, 10, 22) oppure natura ADE per IVA 0% (N1, N2, N3, N4, N5, N6)'),
+  "articoloId": zod.string().optional().describe('ID dell\'articolo di catalogo, usato per aggiornare le giacenze dopo l\'accettazione ADE'),
+  "sconto": zod.number().optional(),
+  "omaggio": zod.boolean().optional()
+})),
+  "pagamento": zod.object({
+  "contanti": zod.number().optional(),
+  "elettronico": zod.number().optional(),
+  "ticketRestaurant": zod.number().optional(),
+  "numeroTicket": zod.string().optional(),
+  "scontoAPagare": zod.number().optional(),
+  "documentoCollegato": zod.string().optional()
+})
+})
+export const ListDocumentiResponse = zod.array(ListDocumentiResponseItem)
+
+
+/**
+ * @summary Recupera un documento commerciale archiviato
+ */
+export const GetDocumentoParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const GetDocumentoResponse = zod.object({
+  "id": zod.string(),
+  "numeroDocumento": zod.string(),
+  "numeroProgressivo": zod.string().nullish(),
+  "dataEmissione": zod.coerce.date(),
+  "tipoOperazione": zod.string(),
+  "totale": zod.number(),
+  "codiceLotteria": zod.string().nullish(),
+  "righe": zod.array(zod.object({
+  "quantita": zod.number(),
+  "descrizione": zod.string(),
+  "prezzoUnitario": zod.number(),
+  "aliquotaIva": zod.string().describe('Percentuale IVA (4, 5, 10, 22) oppure natura ADE per IVA 0% (N1, N2, N3, N4, N5, N6)'),
+  "articoloId": zod.string().optional().describe('ID dell\'articolo di catalogo, usato per aggiornare le giacenze dopo l\'accettazione ADE'),
+  "sconto": zod.number().optional(),
+  "omaggio": zod.boolean().optional()
+})),
+  "pagamento": zod.object({
+  "contanti": zod.number().optional(),
+  "elettronico": zod.number().optional(),
+  "ticketRestaurant": zod.number().optional(),
+  "numeroTicket": zod.string().optional(),
+  "scontoAPagare": zod.number().optional(),
+  "documentoCollegato": zod.string().optional()
+})
 })
 
 

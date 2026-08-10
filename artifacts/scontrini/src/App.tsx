@@ -7,6 +7,7 @@ import HomePage from '@/pages/home';
 import LoginPage from '@/pages/login';
 import RisultatoPage from '@/pages/risultato';
 import AdminPage from '@/pages/admin';
+import StoricoPage from '@/pages/storico';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -23,6 +24,7 @@ function Router() {
       <Route path="/" component={HomePage} />
       <Route path="/login" component={LoginPage} />
       <Route path="/risultato" component={RisultatoPage} />
+      <Route path="/storico" component={StoricoPage} />
       <Route path="/admin" component={AdminPage} />
       <Route component={NotFound} />
     </Switch>

@@ -49,7 +49,7 @@ export interface RigaDocumento {
   quantita: number;
   descrizione: string;
   prezzoUnitario: number;
-  /** Es: 22, 10, 4, Non soggette, Esente */
+  /** Percentuale IVA (4, 5, 10, 22) oppure natura ADE per IVA 0% (N1, N2, N3, N4, N5, N6) */
   aliquotaIva: string;
   sconto?: number;
   omaggio?: boolean;

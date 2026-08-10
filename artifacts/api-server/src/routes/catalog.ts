@@ -5,6 +5,13 @@ import { randomUUID } from "node:crypto";
 
 const router: IRouter = Router();
 
+function normalizeAliquotaIva(value: string | null | undefined): string {
+  if (value === "Esente") return "N4";
+  if (value === "Non soggette") return "N2";
+  if (value && (/^(4|5|10|22)$/.test(value) || /^N[1-6]$/.test(value))) return value;
+  return "22";
+}
+
 // ── GET /catalog ──────────────────────────────────────────────────────────────
 router.get("/catalog", async (_req, res): Promise<void> => {
   const [reparti, articoli] = await Promise.all([
@@ -13,7 +20,11 @@ router.get("/catalog", async (_req, res): Promise<void> => {
   ]);
   res.json({
     reparti,
-    articoli: articoli.map(a => ({ ...a, prezzoUnitario: parseFloat(a.prezzoUnitario) })),
+    articoli: articoli.map(a => ({
+      ...a,
+      prezzoUnitario: parseFloat(a.prezzoUnitario),
+      aliquotaIva: normalizeAliquotaIva(a.aliquotaIva),
+    })),
   });
 });
 
@@ -48,7 +59,7 @@ router.post("/catalog/articoli", async (req, res): Promise<void> => {
   const [row] = await db.insert(articoliTable).values({
     id: randomUUID(), nome: nome.trim(),
     prezzoUnitario: String(prezzoUnitario),
-    aliquotaIva: aliquotaIva ?? "22",
+    aliquotaIva: normalizeAliquotaIva(aliquotaIva),
     repartoId,
     attivo: attivo ?? true,
   }).returning();
@@ -62,12 +73,12 @@ router.put("/catalog/articoli/:id", async (req, res): Promise<void> => {
   const patch: Record<string, unknown> = {};
   if (nome != null) patch.nome = nome.trim();
   if (prezzoUnitario != null) patch.prezzoUnitario = String(prezzoUnitario);
-  if (aliquotaIva != null) patch.aliquotaIva = aliquotaIva;
+  if (aliquotaIva != null) patch.aliquotaIva = normalizeAliquotaIva(aliquotaIva);
   if (repartoId != null) patch.repartoId = repartoId;
   if (attivo != null) patch.attivo = attivo;
   const [row] = await db.update(articoliTable).set(patch).where(eq(articoliTable.id, req.params.id)).returning();
   if (!row) { res.status(404).json({ error: "Articolo non trovato" }); return; }
-  res.json({ ...row, prezzoUnitario: parseFloat(row.prezzoUnitario) });
+  res.json({ ...row, prezzoUnitario: parseFloat(row.prezzoUnitario), aliquotaIva: normalizeAliquotaIva(row.aliquotaIva) });
 });
 
 router.delete("/catalog/articoli/:id", async (req, res): Promise<void> => {

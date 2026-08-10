@@ -7,6 +7,7 @@ import { useGetStampa, useLogout } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
 import { DocumentoResult, RigaDocumento } from "@workspace/api-client-react/src/generated/api.schemas";
 import { formatCurrency } from "@/lib/utils";
+import { ivaLabel } from "@/lib/catalog";
 
 // Wouter doesn't have built-in location state, so we'll use a hack by storing result in sessionStorage
 // In a real app we might use a context or global store
@@ -123,7 +124,7 @@ export default function RisultatoPage() {
                     <div className="flex-1">
                       <p className="font-medium">{row.descrizione || "Articolo"}</p>
                       <p className="text-muted-foreground text-xs">
-                        {row.quantita} × € {formatCurrency(row.prezzoUnitario)} • IVA {row.aliquotaIva}%
+                        {row.quantita} × € {formatCurrency(row.prezzoUnitario)} • {ivaLabel(row.aliquotaIva)}
                         {row.sconto ? ` • Sconto € ${formatCurrency(row.sconto)}` : ""}
                         {row.omaggio ? " • OMAGGIO" : ""}
                       </p>

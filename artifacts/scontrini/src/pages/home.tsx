@@ -5,7 +5,15 @@ import { useRequireAuth } from "@/hooks/use-require-auth";
 import { formatCurrency } from "@/lib/utils";
 import { useArticoloSize } from "@/lib/articolo-size";
 import { useToast } from "@/hooks/use-toast";
-import { fetchCatalog, type Catalog, type Articolo, type AliquotaIva } from "@/lib/catalog";
+import {
+  fetchCatalog,
+  type Catalog,
+  type Articolo,
+  type AliquotaIva,
+  isNaturaIva,
+  ivaLabel,
+  normalizeAliquotaIva,
+} from "@/lib/catalog";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { LogOut, ShoppingCart, Trash2, Plus, Minus, Pencil, Send, ChevronLeft, X } from "lucide-react";
 import { BottomNav } from "@/components/bottom-nav";
@@ -28,7 +36,7 @@ interface CartItem {
   omaggio: boolean;
 }
 
-const IVA_OPTIONS: AliquotaIva[] = ["22", "10", "5", "4", "Esente", "Non soggette"];
+const IVA_OPTIONS: AliquotaIva[] = ["22", "10", "5", "4", "N1", "N2", "N3", "N4", "N5", "N6"];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -387,7 +395,7 @@ export default function HomePage() {
                       <p className="text-sm font-semibold text-gray-800 leading-tight line-clamp-3">{art.nome}</p>
                       <div>
                         <p className="text-lg font-bold text-gray-900">€ {art.prezzoUnitario.toFixed(2)}</p>
-                        <span className="text-[10px] text-gray-400 font-mono">{art.aliquotaIva === "Esente" ? "ES" : art.aliquotaIva === "Non soggette" ? "NS" : art.aliquotaIva + "%"}</span>
+                        <span className="text-[10px] text-gray-400 font-mono">{isNaturaIva(art.aliquotaIva) ? `0% · ${art.aliquotaIva}` : `${art.aliquotaIva}%`}</span>
                       </div>
                     </button>
                   );
@@ -555,7 +563,7 @@ function CartPanel({ cart, totals, totalePagato, resto, modoPagamento, setModoPa
                   <p className="text-xs text-gray-400 font-mono">
                     € {item.prezzoUnitario.toFixed(2)} × {item.quantita}
                     {item.sconto > 0 && <span className="text-red-400"> −{item.sconto.toFixed(2)}</span>}
-                    <span className="ml-1 text-gray-300">· {item.aliquotaIva}%</span>
+                    <span className="ml-1 text-gray-300">· {ivaLabel(item.aliquotaIva)}</span>
                   </p>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
@@ -683,7 +691,7 @@ function CartPanel({ cart, totals, totalePagato, resto, modoPagamento, setModoPa
 
 function EditItemDialog({ item, onSave, onClose }: { item: CartItem; onSave: (p: Partial<CartItem>) => void; onClose: () => void }) {
   const [prezzo, setPrezzo] = useState(item.prezzoUnitario);
-  const [iva, setIva] = useState<AliquotaIva>(item.aliquotaIva);
+  const [iva, setIva] = useState<AliquotaIva>(normalizeAliquotaIva(item.aliquotaIva));
   const [sconto, setSconto] = useState(item.sconto);
   const [omaggio, setOmaggio] = useState(item.omaggio);
 
@@ -703,7 +711,7 @@ function EditItemDialog({ item, onSave, onClose }: { item: CartItem; onSave: (p:
             <Select value={iva} onValueChange={v => setIva(v as AliquotaIva)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                {IVA_OPTIONS.map(o => <SelectItem key={o} value={o}>{o === "Esente" || o === "Non soggette" ? o : `${o}%`}</SelectItem>)}
+                {IVA_OPTIONS.map(o => <SelectItem key={o} value={o}>{ivaLabel(o)}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>

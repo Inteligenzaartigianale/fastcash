@@ -331,7 +331,7 @@ function buildDcw10Payload(
       quantita: number;
       descrizione: string;
       prezzoUnitario: number; // GROSS unit price (IVA inclusa)
-      aliquotaIva: string;    // e.g. "22", "10", "4", "Esente", "Non soggette"
+      aliquotaIva: string;    // e.g. "22", "10", "4", "N1"..."N6"
       sconto?: number;        // line discount amount (on total line)
       omaggio?: boolean;
     }>;
@@ -364,7 +364,12 @@ function buildDcw10Payload(
 ) {
   // ── Per-line calculations ──────────────────────────────────────────────────
   const elementiContabili = input.righe.map((r) => {
-    const aliqNum = parseFloat(r.aliquotaIva); // NaN for Esente/Non soggette
+    const legacyNatura = r.aliquotaIva === "Esente"
+      ? "N4"
+      : r.aliquotaIva === "Non soggette"
+        ? "N2"
+        : r.aliquotaIva;
+    const aliqNum = parseFloat(legacyNatura); // NaN for N1...N6
     const hasIva = !isNaN(aliqNum) && aliqNum > 0;
     const divisor = hasIva ? 1 + aliqNum / 100 : 1;
 
@@ -389,7 +394,9 @@ function buildDcw10Payload(
       prezzoUnitario: fmt8(prezzoUnitarioNetto),
       scontoUnitario: fmt8(scontoUnitario),
       scontoLordo: fmt8(scontoLordo),
-      aliquotaIVA: hasIva ? String(Math.round(aliqNum)) : r.aliquotaIva,
+      // The ADE Wizard2/DCW10 contract uses N1...N6 in this same field
+      // for zero-rate lines; numeric rates remain percentages.
+      aliquotaIVA: hasIva ? String(Math.round(aliqNum)) : legacyNatura,
       importoIVA: fmt8(importoIVA),
       imponibile: fmt8(imponibile),
       imponibileNetto: fmt8(imponibile), // same as imponibile when no additional line discounts

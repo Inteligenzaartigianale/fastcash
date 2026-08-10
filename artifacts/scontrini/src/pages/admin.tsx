@@ -5,6 +5,7 @@ import {
   createReparto, updateReparto, deleteReparto,
   createArticolo, updateArticolo, deleteArticolo,
   type Reparto, type Articolo, type AliquotaIva,
+  ALIQUOTE_IVA, NATURE_IVA, isNaturaIva,
 } from "@/lib/catalog";
 import { Plus, Pencil, Trash2, Check } from "lucide-react";
 import { BottomNav } from "@/components/bottom-nav";
@@ -18,11 +19,11 @@ import { Switch } from "@/components/ui/switch";
 
 import { useArticoloSize, SIZES } from "@/lib/articolo-size";
 
-const IVA_OPTIONS: AliquotaIva[] = ["22", "10", "5", "4", "Esente", "Non soggette"];
+const IVA_OPTIONS: AliquotaIva[] = ["22", "10", "5", "4", "N1", "N2", "N3", "N4", "N5", "N6"];
 const COLORI = ["#ef4444","#f97316","#eab308","#22c55e","#14b8a6","#3b82f6","#8b5cf6","#ec4899","#6b7280","#1e3a5f"];
 
 export default function AdminPage() {
-  const [tab, setTab] = useState<"reparti" | "articoli" | "visualizzazione">("reparti");
+  const [tab, setTab] = useState<"reparti" | "articoli" | "aliquote" | "visualizzazione">("reparti");
   const { size, setSize } = useArticoloSize();
   const qc = useQueryClient();
   const { data: catalog, isLoading } = useQuery({ queryKey: ["catalog"], queryFn: fetchCatalog });
@@ -43,7 +44,7 @@ export default function AdminPage() {
       </header>
 
       <div className="bg-white border-b px-4 flex gap-1 shrink-0">
-        {(["reparti", "articoli", "visualizzazione"] as const).map(t => (
+        {(["reparti", "articoli", "aliquote", "visualizzazione"] as const).map(t => (
           <button key={t} onClick={() => setTab(t)}
             className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors capitalize ${tab === t ? "border-[#1e3a5f] text-[#1e3a5f]" : "border-transparent text-gray-500 hover:text-gray-700"}`}
           >{t}</button>
@@ -53,6 +54,7 @@ export default function AdminPage() {
       <div className="flex-1 overflow-y-auto p-4 max-w-2xl w-full mx-auto">
         {tab === "reparti"  && <RepartiPanel  catalog={catalog} onRefresh={invalidate} />}
         {tab === "articoli" && <ArticoliPanel catalog={catalog} onRefresh={invalidate} />}
+        {tab === "aliquote" && <AliquotePanel />}
         {tab === "visualizzazione" && (
           <div className="space-y-6">
             <div>
@@ -77,6 +79,43 @@ export default function AdminPage() {
       </div>
 
       <BottomNav />
+    </div>
+  );
+}
+
+function AliquotePanel() {
+  return (
+    <div className="space-y-5">
+      <div>
+        <h2 className="text-sm font-semibold text-gray-700">Aliquote IVA disponibili</h2>
+        <p className="text-xs text-gray-400 mt-1">Queste sono le aliquote selezionabili negli articoli e nelle righe del documento.</p>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        {ALIQUOTE_IVA.map(({ value, label }) => (
+          <div key={value} className="rounded-xl border bg-white p-3 text-center shadow-sm">
+            <p className="text-lg font-bold text-[#1e3a5f]">{value}%</p>
+            <p className="text-[11px] text-gray-500">{label}</p>
+          </div>
+        ))}
+      </div>
+      <div>
+        <h2 className="text-sm font-semibold text-gray-700">Nature per IVA 0%</h2>
+        <p className="text-xs text-gray-400 mt-1">Seleziona la natura nel tab Articoli quando un prodotto non è imponibile. Il codice viene trasmesso ad ADE nella riga del documento.</p>
+      </div>
+      <div className="space-y-2">
+        {NATURE_IVA.map(natura => (
+          <div key={natura.value} className="bg-white rounded-xl border p-3 shadow-sm flex items-start gap-3">
+            <span className="w-10 h-8 rounded-lg bg-amber-100 text-amber-800 font-bold text-sm flex items-center justify-center shrink-0">{natura.value}</span>
+            <div>
+              <p className="text-sm font-medium text-gray-800">{natura.label.replace(`${natura.value} — `, "")}</p>
+              <p className="text-xs text-gray-500 mt-0.5">{natura.description}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+      <p className="text-[11px] text-gray-400 border-t pt-3">
+        Riferimento: tracciato ufficiale Documento Commerciale ADE, campo Natura (codici N1–N6).
+      </p>
     </div>
   );
 }
@@ -167,7 +206,7 @@ function ArticoliPanel({ catalog, onRefresh }: { catalog: { reparti: Reparto[]; 
     setShowNew(true); setEditing(null);
     setForm({ nome: "", prezzoUnitario: 0, aliquotaIva: "22", repartoId: catalog.reparti[0]?.id ?? "", attivo: true });
   };
-  const openEdit = (a: Articolo) => { setEditing(a); setShowNew(false); setForm({ nome: a.nome, prezzoUnitario: a.prezzoUnitario, aliquotaIva: a.aliquotaIva, repartoId: a.repartoId, attivo: a.attivo }); };
+  const openEdit = (a: Articolo) => { setEditing(a); setShowNew(false); setForm({ nome: a.nome, prezzoUnitario: a.prezzoUnitario, aliquotaIva: isNaturaIva(a.aliquotaIva) ? a.aliquotaIva : a.aliquotaIva as AliquotaIva, repartoId: a.repartoId, attivo: a.attivo }); };
   const close = () => { setEditing(null); setShowNew(false); };
 
   const handleSave = async () => {
@@ -215,7 +254,7 @@ function ArticoliPanel({ catalog, onRefresh }: { catalog: { reparti: Reparto[]; 
             <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: rep?.colore ?? "#9ca3af" }} />
             <div className="flex-1 min-w-0">
               <p className="font-medium text-gray-800">{art.nome}</p>
-              <p className="text-xs text-gray-400">{rep?.nome} · IVA {art.aliquotaIva === "Esente" ? "Esente" : art.aliquotaIva === "Non soggette" ? "Non sogg." : art.aliquotaIva + "%"}</p>
+              <p className="text-xs text-gray-400">{rep?.nome} · {isNaturaIva(art.aliquotaIva) ? `IVA 0% · ${art.aliquotaIva}` : `IVA ${art.aliquotaIva}%`}</p>
             </div>
             <p className="font-bold text-gray-800 text-sm font-mono shrink-0">€ {Number(art.prezzoUnitario).toFixed(2)}</p>
             <Switch checked={art.attivo} onCheckedChange={async v => { await updateArticolo(art.id, { attivo: v }); onRefresh(); }} />
@@ -254,7 +293,7 @@ function ArticoliPanel({ catalog, onRefresh }: { catalog: { reparti: Reparto[]; 
                 <Select value={form.aliquotaIva} onValueChange={v => setForm(f => ({ ...f, aliquotaIva: v as AliquotaIva }))}>
                   <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {IVA_OPTIONS.map(o => <SelectItem key={o} value={o}>{o === "Esente" || o === "Non soggette" ? o : `${o}%`}</SelectItem>)}
+                    {IVA_OPTIONS.map(o => <SelectItem key={o} value={o}>{isNaturaIva(o) ? `IVA 0% · ${o}` : `${o}%`}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>

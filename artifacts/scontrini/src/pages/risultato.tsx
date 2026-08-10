@@ -1,17 +1,15 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft, CheckCircle2, Download, FileText, Plus, LogOut } from "lucide-react";
+import { ArrowLeft, CheckCircle2, FileText, Plus, LogOut } from "lucide-react";
 import { useLocation } from "wouter";
-import { useGetDocumento, useGetStampa, useLogout } from "@workspace/api-client-react";
-import { useToast } from "@/hooks/use-toast";
+import { useGetDocumento, useLogout } from "@workspace/api-client-react";
 import type { DocumentoResult, RigaDocumento } from "@workspace/api-client-react";
 import { formatCurrency } from "@/lib/utils";
 import { ivaLabel } from "@/lib/catalog";
 
 export default function RisultatoPage() {
   const [, setLocation] = useLocation();
-  const { toast } = useToast();
   const logoutMutation = useLogout();
   
   const documentId = new URLSearchParams(window.location.search).get("id") ?? "";
@@ -29,15 +27,6 @@ export default function RisultatoPage() {
     }
   }, [documentId, documentQuery.isLoading, archivedDocument, setLocation]);
 
-  const [downloading, setDownloading] = useState(false);
-
-  const { refetch: fetchStampa } = useGetStampa(archivedDocument?.numeroProgressivo || "", {
-    query: {
-      enabled: false,
-      queryKey: ["/api/ae/stampa", archivedDocument?.numeroProgressivo || ""],
-    }
-  });
-
   if (documentQuery.isLoading || !archivedDocument) {
     return <div className="min-h-[100dvh] flex items-center justify-center bg-background text-sm text-muted-foreground">Caricamento documento...</div>;
   }
@@ -48,35 +37,8 @@ export default function RisultatoPage() {
     numeroDocumento: archivedDocument.numeroDocumento,
     numeroProgressivo: archivedDocument.numeroProgressivo ?? "",
     dataEmissione: archivedDocument.dataEmissione,
-    pdfUrl: archivedDocument.numeroProgressivo ? `/api/ae/stampa/${encodeURIComponent(archivedDocument.numeroProgressivo)}` : null,
   };
   const rows: RigaDocumento[] = archivedDocument.righe;
-
-  const handleDownload = async () => {
-    if (!result.numeroProgressivo) return;
-    
-    setDownloading(true);
-    try {
-      const { data } = await fetchStampa();
-      if (!data) throw new Error("Errore durante il download");
-      
-      const url = window.URL.createObjectURL(data as Blob);
-      const a = window.document.createElement("a");
-      a.href = url;
-      a.download = `Documento_${result.numeroDocumento.replace(/\//g, '_')}.pdf`;
-      window.document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-    } catch (e) {
-      toast({
-        title: "Errore",
-        description: "Impossibile scaricare il PDF.",
-        variant: "destructive"
-      });
-    } finally {
-      setDownloading(false);
-    }
-  };
 
   const handleLogout = () => {
     logoutMutation.mutate(undefined, {
@@ -159,19 +121,9 @@ export default function RisultatoPage() {
               </div>
             </div>
           </CardContent>
-          <CardFooter className="flex flex-col sm:flex-row gap-3 pt-6 border-t bg-muted/20">
-            <Button 
-              variant="outline" 
-              className="w-full sm:w-1/2" 
-              onClick={handleDownload}
-              disabled={!result.numeroProgressivo || downloading}
-              data-testid="button-scarica-pdf"
-            >
-              <Download className="w-4 h-4 mr-2" />
-              {downloading ? "Download in corso..." : "Scarica PDF"}
-            </Button>
-            <Button 
-              className="w-full sm:w-1/2" 
+          <CardFooter className="pt-6 border-t bg-muted/20">
+            <Button
+              className="w-full"
               onClick={handleNuovo}
               data-testid="button-nuovo-doc"
             >

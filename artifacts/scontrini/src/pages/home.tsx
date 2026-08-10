@@ -15,7 +15,7 @@ import {
   normalizeAliquotaIva,
 } from "@/lib/catalog";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { LogOut, ShoppingCart, Trash2, Plus, Minus, Pencil, Send, ChevronLeft, X, Delete, Calculator, ReceiptText, History, RefreshCw, CheckCircle2, XCircle, Download, FileText } from "lucide-react";
+import { LogOut, ShoppingCart, Trash2, Plus, Minus, Pencil, Send, ChevronLeft, X, Delete, Calculator, ReceiptText, History, RefreshCw, CheckCircle2, XCircle, FileText } from "lucide-react";
 import { BottomNav } from "@/components/bottom-nav";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -173,7 +173,6 @@ export default function HomePage() {
     numeroDocumento: string;
     dataEmissione?: string;
     numeroProgressivo?: string;
-    pdfUrl?: string | null;
   } | null>(null);
 
   // Derived catalog (catalog can be undefined while loading)
@@ -371,7 +370,6 @@ export default function HomePage() {
             numeroDocumento: res.numeroDocumento,
             dataEmissione: res.dataEmissione,
             numeroProgressivo: res.numeroProgressivo,
-            pdfUrl: res.pdfUrl,
           });
         }
       },
@@ -706,20 +704,10 @@ export default function HomePage() {
                 </div>
               </div>
               <div className="flex gap-2 border-t bg-gray-50 px-4 py-3">
-                {emissioneRiuscita.pdfUrl && (
-                  <a
-                    href={emissioneRiuscita.pdfUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border bg-white px-3 py-2 text-xs font-semibold text-[#1e3a5f] hover:bg-blue-50"
-                  >
-                    <Download className="h-3.5 w-3.5" /> PDF
-                  </a>
-                )}
                 <Button
                   type="button"
                   onClick={() => setEmissioneRiuscita(null)}
-                  className="flex-1 bg-[#1e3a5f]"
+                  className="w-full bg-[#1e3a5f]"
                 >
                   Torna alla cassa
                 </Button>

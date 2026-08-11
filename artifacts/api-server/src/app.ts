@@ -2,6 +2,7 @@ import express, { type Express } from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
 import path from "path";
+import { fileURLToPath } from "node:url";
 import router from "./routes";
 import { logger } from "./lib/logger";
 
@@ -34,20 +35,17 @@ app.use("/api", router);
 
 // Serve Chrome extension ZIP for easy download
 app.get("/api/download/extension", (_req, res) => {
-  const zipPath = path.resolve(process.cwd(), "../../chrome-extension");
+  const zipPath = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../extension/scontrini-extension.zip",
+  );
   res.setHeader("Content-Type", "application/zip");
   res.setHeader("Content-Disposition", "attachment; filename=\"scontrini-extension.zip\"");
-  // Zip on the fly using archiver
-  const { execSync } = require("child_process");
-  try {
-    const buf = execSync(
-      `cd ${path.resolve(process.cwd(), "../..")} && zip -r - chrome-extension -x chrome-extension/scontrini-extension.zip`,
-      { maxBuffer: 10 * 1024 * 1024 },
-    );
-    res.send(buf);
-  } catch (e) {
-    res.status(500).send("Errore generazione ZIP");
-  }
+  res.sendFile(zipPath, (err) => {
+    if (err && !res.headersSent) {
+      res.status(404).json({ error: "Estensione non disponibile" });
+    }
+  });
 });
 
 export default app;

@@ -699,11 +699,15 @@ export async function loginWithSiampe(
       );
     }
 
-    // If still missing, navigate Puppeteer directly to the DCO service URL.
-    // InstradamentofcWeb is a router — FATSC is only issued by the actual DCO
-    // service at /ser/documenticommercialionline/.
-    if (!cookieMap.has("FATSC") && !cookieMap.has("JSESSIONID")) {
-      logger.info("Still no FATSC — navigating Puppeteer directly to DCO service URL");
+    // Navigate Puppeteer directly to the DCO service URL whenever JSESSIONID is
+    // missing. InstradamentofcWeb only issues FATSC (via /dp/PI2FC) — JSESSIONID
+    // is issued by the DCO Java servlet when the actual application is accessed.
+    // Both are required for ADE to recognise the DCO session.
+    if (!cookieMap.has("JSESSIONID")) {
+      logger.info(
+        { hasFATSC: cookieMap.has("FATSC") },
+        "JSESSIONID missing — navigating Puppeteer directly to DCO service to obtain it",
+      );
       await page.goto(DCO_URL, { waitUntil: "domcontentloaded", timeout: 45000 }).catch((e) => {
         logger.warn({ err: String(e) }, "Direct DCO Puppeteer nav error");
       });

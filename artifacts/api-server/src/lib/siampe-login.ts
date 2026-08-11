@@ -681,15 +681,51 @@ export async function loginWithSiampe(
       if (c.domain.includes("agenziaentrate.gov.it")) cookieMap.set(c.name, c.value);
     }
 
-    // Some ADE environments complete the portal hand-off only through the
-    // redirect chain, not through the rendered SPA. In that case the browser
-    // still has only SIAMPE/portal cookies. Repeat the hand-off server-side
-    // using the same cookie jar and merge any DCO cookies it creates.
+    // InstradamentofcWeb runs as a SPA in the Puppeteer browser and makes an
+    // async call to /dp/PI2FC which sets FATSC. This can arrive AFTER the
+    // initial browser-cookie snapshot above. Wait briefly and re-read the
+    // Puppeteer browser cookies so we capture any cookies set in the background.
+    if (!cookieMap.has("FATSC") && !cookieMap.has("JSESSIONID")) {
+      logger.info("FATSC/JSESSIONID missing — waiting for InstradamentofcWeb background calls to complete");
+      await new Promise((r) => setTimeout(r, 6000));
+      const lateCookiesIva = await page.cookies("https://ivaservizi.agenziaentrate.gov.it").catch(() => []);
+      const lateCookiesPortale = await page.cookies("https://portale.agenziaentrate.gov.it").catch(() => []);
+      for (const c of [...lateCookiesIva, ...lateCookiesPortale]) {
+        if (c.domain.includes("agenziaentrate.gov.it")) cookieMap.set(c.name, c.value);
+      }
+      logger.info(
+        { hasFATSC: cookieMap.has("FATSC"), hasJSESSIONID: cookieMap.has("JSESSIONID") },
+        "Browser cookies after background wait",
+      );
+    }
+
+    // If still missing, navigate Puppeteer directly to the DCO service URL.
+    // InstradamentofcWeb is a router — FATSC is only issued by the actual DCO
+    // service at /ser/documenticommercialionline/.
+    if (!cookieMap.has("FATSC") && !cookieMap.has("JSESSIONID")) {
+      logger.info("Still no FATSC — navigating Puppeteer directly to DCO service URL");
+      await page.goto(DCO_URL, { waitUntil: "domcontentloaded", timeout: 45000 }).catch((e) => {
+        logger.warn({ err: String(e) }, "Direct DCO Puppeteer nav error");
+      });
+      await new Promise((r) => setTimeout(r, 8000));
+      const dcoCookies = await page.cookies("https://ivaservizi.agenziaentrate.gov.it").catch(() => []);
+      for (const c of dcoCookies) {
+        if (c.domain.includes("agenziaentrate.gov.it")) cookieMap.set(c.name, c.value);
+      }
+      logger.info(
+        { hasFATSC: cookieMap.has("FATSC"), hasJSESSIONID: cookieMap.has("JSESSIONID"), url: page.url() },
+        "Browser cookies after direct DCO nav",
+      );
+    }
+
+    // Last resort: follow the ADE SSO redirect chain via Node.js fetch.
+    // This catches environments where the browser SPA cannot issue FATSC
+    // (e.g. headless Chrome with specific network restrictions).
     if (!cookieMap.has("FATSC") && !cookieMap.has("JSESSIONID")) {
       const browserCookieHeader = Array.from(cookieMap.entries())
         .map(([name, value]) => `${name}=${value}`)
         .join("; ");
-      logger.info("DCO cookies missing after browser hand-off — following ADE SSO chain");
+      logger.info("DCO cookies still missing — following ADE SSO chain as last resort");
       const ssoCookieHeader = await followPortaleSSOToIvaservizi(browserCookieHeader);
       for (const [name, value] of Object.entries(parseCookieHeader(ssoCookieHeader))) {
         cookieMap.set(name, value);

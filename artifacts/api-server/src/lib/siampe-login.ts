@@ -147,7 +147,11 @@ function spawnChrome(executablePath: string): Promise<{ wsUrl: string; proc: Ret
       "--disable-dev-shm-usage",
       "--disable-gpu",
       "--no-first-run",
-      "--disable-extensions",
+      // Anti-bot-detection: disables the "AutomationControlled" feature that
+      // sets navigator.webdriver=true and triggers ADE-SIAMPE bot rejection.
+      "--disable-blink-features=AutomationControlled",
+      "--disable-infobars",
+      "--window-size=1280,900",
       `--remote-debugging-port=${DEBUG_PORT}`,
     ], { stdio: ["ignore", "ignore", "pipe"] });
 
@@ -221,10 +225,20 @@ export async function loginWithSiampe(
     page.setDefaultNavigationTimeout(90000);
     page.setDefaultTimeout(90000);
 
-    await page.setViewport({ width: 1280, height: 800 });
+    await page.setViewport({ width: 1280, height: 900 });
     await page.setUserAgent(
       "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     );
+
+    // Hide Puppeteer/automation fingerprint so ADE-SIAMPE does not reject the
+    // login as a bot even when credentials are correct.
+    await page.evaluateOnNewDocument(() => {
+      Object.defineProperty(navigator, "webdriver", { get: () => false });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      delete (window as any).chrome?.runtime;
+      Object.defineProperty(navigator, "plugins", { get: () => [1, 2, 3] });
+      Object.defineProperty(navigator, "languages", { get: () => ["it-IT", "it", "en-US"] });
+    });
 
     // Clear all cookies before each attempt to avoid stale session state
     const client = await page.target().createCDPSession();

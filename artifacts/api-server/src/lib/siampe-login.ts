@@ -635,13 +635,21 @@ export async function loginWithSiampe(
         logger.info({ url: page.url(), onIvaservizi: onIvaservizi() }, "After DCO portale redirect");
       }
 
-      // If still not on ivaservizi, try direct nav (last resort — may yield nonauth but we collect all cookies)
-      if (!onIvaservizi()) {
-        logger.info("Direct ivaservizi nav (last resort)");
-        await page.goto(DCO_URL, { waitUntil: "domcontentloaded", timeout: 30000 }).catch(() => {});
-        await new Promise((r) => setTimeout(r, 4000));
-        await page.screenshot({ path: "/tmp/ivaservizi-last-resort.png", fullPage: false }).catch(() => {});
-        logger.info({ url: page.url() }, "After last-resort ivaservizi nav");
+      // Always navigate Puppeteer directly to the DCO service URL to trigger
+      // FATSC issuance. InstradamentofcWeb is a routing SPA on the ivaservizi
+      // domain but is NOT the DCO service — FATSC is only issued by
+      // /ser/documenticommercialionline/. The old guard (!onIvaservizi()) was
+      // wrong because it skipped this step when we landed on InstradamentofcWeb.
+      const hasFATSCAlready = (await page.cookies().catch(() => [])).some((c) => c.name === "FATSC");
+      if (!hasFATSCAlready) {
+        logger.info({ currentUrl: page.url() }, "No FATSC yet — navigating Puppeteer directly to DCO service");
+        await page.goto(DCO_URL, { waitUntil: "domcontentloaded", timeout: 45000 }).catch((e) => {
+          logger.warn({ err: String(e) }, "Direct DCO nav error");
+        });
+        // Wait for DCO SPA to fully initialise and for ADE to issue FATSC
+        await new Promise((r) => setTimeout(r, 8000));
+        await page.screenshot({ path: "/tmp/dco-direct-nav.png", fullPage: false }).catch(() => {});
+        logger.info({ url: page.url() }, "After direct DCO nav");
       }
     }
 

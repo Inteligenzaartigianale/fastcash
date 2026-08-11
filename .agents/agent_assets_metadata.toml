@@ -6,3 +6,10 @@ id = "FzfexWRuW-TYzkoGrhVaL"
 uri = "file://scontrini-extension.zip"
 type = "unspecified"
 title = "Estensione Chrome – Scontrini Fiscali"
+
+[[outputs]]
+id = "ovI3c1sELTAyiwfBaL5Nj"
+uri = "file://chrome-extension/scontrini-extension.zip"
+type = "unspecified"
+title = "Estensione Chrome Scontrini Fiscali v1.7"
+description = "Pacchetto aggiornato con trasferimento cookie DCO per URL reali, percorso ADE FATBTB e diagnostica dei cookie senza valori."

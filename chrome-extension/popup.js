@@ -69,7 +69,12 @@ connectBtn.addEventListener("click", async () => {
       return;
     }
 
-    if (cookieCountEl) cookieCountEl.textContent = `${result.cookieCount || 0} cookie trovati`;
+    if (cookieCountEl) {
+      const dco = result.dcoCookieNames || [];
+      cookieCountEl.textContent =
+        `${result.cookieCount || 0} cookie trovati` +
+        ` · DCO: ${dco.length ? dco.join(", ") : "nessuno"}`;
+    }
     setStatus("success", "✅", "Connesso! Torna all'app per emettere documenti.");
     // Notifica anche direttamente la scheda attiva, nel caso il broadcast
     // del service worker sia arrivato prima del caricamento del content script.

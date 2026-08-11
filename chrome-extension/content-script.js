@@ -6,6 +6,7 @@ function publishConnectionState(result) {
       success: result?.success === true,
       error: result?.error,
       cookieCount: result?.cookieCount,
+      dcoCookieNames: result?.dcoCookieNames,
     },
     "*",
   );
@@ -23,6 +24,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   publishConnectionState({
     success: connected,
     error: changes.connectionError?.newValue || "",
+    dcoCookieNames: changes.dcoCookieNames?.newValue || [],
   });
 });
 
@@ -54,6 +56,7 @@ window.addEventListener("message", (event) => {
         success: !runtimeError && result?.success === true,
         error: runtimeError?.message || result?.error,
         cookieCount: result?.cookieCount,
+        dcoCookieNames: result?.dcoCookieNames,
       };
       window.postMessage({
         source: "scontrini-extension",

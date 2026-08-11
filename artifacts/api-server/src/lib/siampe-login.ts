@@ -260,6 +260,16 @@ export async function loginWithSiampe(
     const nonAuthHtml = await page.evaluate("document.body?.innerHTML?.substring(0, 4000) || ''").catch(() => "") as string;
     logger.info({ html: nonAuthHtml }, "nonauth.html body HTML");
 
+    // The current ADE DCO unauthenticated page does not show a login button.
+    // Its "Indietro" link is the actual entry point for the authenticated
+    // portal flow and redirects to SIAMPE with `to=FATBTB`. Using the direct
+    // DCO URL as a fallback skips that hand-off and leaves only SIAMPE cookies.
+    const backPortalUrl = await page.evaluate(`(function(){
+      var link = document.querySelector('#backId');
+      return link && link.href ? link.href : null;
+    })()`) as string | null;
+    logger.info({ backPortalUrl }, "DCO unauthenticated portal link");
+
     // Extract Angular config objects that may contain the login URL
     const jsLoginUrl = await page.evaluate(`(function(){
       var keys = ['loginUrl', 'authUrl', 'siampeUrl', 'login_url', 'loginPath', 'iampeUrl'];
@@ -334,15 +344,17 @@ export async function loginWithSiampe(
 
     logger.info({ capturedLoginUrl, jsLoginUrl }, "Login URL capture summary");
 
-    // Build the SIAMPE URL — prefer intercepted (exact), then JS config, then fallback
-    let siampeUrl = capturedLoginUrl || jsLoginUrl || SIAMPE_LOGIN_URL_FALLBACK;
+    // Prefer an intercepted/configured URL. If the DCO page exposes only the
+    // portal link, navigate through it so ADE creates the correct `FATBTB`
+    // return flow. The portal link itself redirects to SIAMPE.
+    let siampeUrl = capturedLoginUrl || jsLoginUrl || backPortalUrl || SIAMPE_LOGIN_URL_FALLBACK;
 
     // If relative, make absolute
     if (siampeUrl && siampeUrl.startsWith("/")) {
       siampeUrl = `https://ivaservizi.agenziaentrate.gov.it${siampeUrl}`;
     }
 
-    logger.info({ siampeUrl }, "Navigating to SIAMPE login");
+    logger.info({ siampeUrl, viaPortalFlow: siampeUrl === backPortalUrl }, "Navigating to SIAMPE login");
     await page.goto(siampeUrl, { waitUntil: "domcontentloaded", timeout: 90000 });
     await new Promise((r) => setTimeout(r, 2000));
     await page.screenshot({ path: "/tmp/siampe-step1.png", fullPage: false }).catch(() => {});
@@ -500,7 +512,23 @@ export async function loginWithSiampe(
       page.url().includes("ivaservizi.agenziaentrate.gov.it") && !page.url().includes("nonauth");
 
     if (!onIvaservizi()) {
-      logger.info({ url: page.url() }, "Landed on portale (not ivaservizi) — trying to navigate to DCO");
+      logger.info({ url: page.url() }, "Landed on portale (not ivaservizi) — opening DCO service hand-off");
+
+      // ADE returns here after Fisconline login. The portal frontend uses the
+      // `to=FATBTB` target to create the Fatture e Corrispettivi/DCO session.
+      // Going straight back to /ser/documenticommercialionline/ skips this
+      // hand-off and results in nonauth.html with only SIAMPE cookies.
+      const dcoPortalEntry =
+        "https://portale.agenziaentrate.gov.it/PortaleWeb/home?to=FATBTB";
+      logger.info({ dcoPortalEntry }, "Navigating through ADE DCO portal target");
+      await page.goto(dcoPortalEntry, {
+        waitUntil: "domcontentloaded",
+        timeout: 45000,
+      }).catch((err) => {
+        logger.warn({ err: String(err) }, "ADE DCO portal target navigation failed");
+      });
+      await new Promise((r) => setTimeout(r, 8000));
+      logger.info({ url: page.url(), onIvaservizi: onIvaservizi() }, "After ADE DCO portal target");
 
       // Extract Liferay authToken from the page — needed for portale-rest CSRF protection.
       // Liferay embeds this token as window.Liferay.authToken on every portale page.
@@ -631,6 +659,32 @@ export async function loginWithSiampe(
       if (c.domain.includes("agenziaentrate.gov.it")) cookieMap.set(c.name, c.value);
     }
 
+    // Some ADE environments complete the portal hand-off only through the
+    // redirect chain, not through the rendered SPA. In that case the browser
+    // still has only SIAMPE/portal cookies. Repeat the hand-off server-side
+    // using the same cookie jar and merge any DCO cookies it creates.
+    if (!cookieMap.has("FATSC") && !cookieMap.has("JSESSIONID")) {
+      const browserCookieHeader = Array.from(cookieMap.entries())
+        .map(([name, value]) => `${name}=${value}`)
+        .join("; ");
+      logger.info("DCO cookies missing after browser hand-off — following ADE SSO chain");
+      const ssoCookieHeader = await followPortaleSSOToIvaservizi(browserCookieHeader);
+      for (const [name, value] of Object.entries(parseCookieHeader(ssoCookieHeader))) {
+        cookieMap.set(name, value);
+      }
+      logger.info(
+        {
+          addedCookieNames: Object.keys(parseCookieHeader(ssoCookieHeader)),
+          hasFATSC: cookieMap.has("FATSC"),
+          hasJSESSIONID: cookieMap.has("JSESSIONID"),
+        },
+        "DCO SSO chain cookie merge complete",
+      );
+    }
+
+    const finalHasFATSC = cookieMap.has("FATSC");
+    const finalHasJSESSIONID = cookieMap.has("JSESSIONID");
+
     logger.info(
       { count: cookieMap.size, names: Array.from(cookieMap.keys()) },
       "All cookies collected (merged domains)",
@@ -650,7 +704,12 @@ export async function loginWithSiampe(
     })()`).catch(() => "") as string;
 
     logger.info(
-      { ragioneSociale, cookieLen: finalCookieHeader.length, hasFATSC, hasJSESSIONID },
+      {
+        ragioneSociale,
+        cookieLen: finalCookieHeader.length,
+        hasFATSC: finalHasFATSC,
+        hasJSESSIONID: finalHasJSESSIONID,
+      },
       "SIAMPE login successful",
     );
 
@@ -820,6 +879,8 @@ async function followPortaleSSOToIvaservizi(siampeCookies: string): Promise<stri
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
   const ENTRY_URLS = [
+    // Current portal SPA hand-off for Fatture e Corrispettivi/DCO.
+    "https://portale.agenziaentrate.gov.it/PortaleWeb/home?to=FATBTB",
     // Liferay deep-link for DCO — navigating here while authenticated on portale
     // triggers the portale→ivaservizi SSO flow automatically
     "https://portale.agenziaentrate.gov.it/portale/web/guest/schede/comunicazioni/documenti-commerciali-online",

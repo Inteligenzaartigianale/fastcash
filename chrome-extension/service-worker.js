@@ -1,37 +1,35 @@
-const AE_DOMAINS = [
-  "ivaservizi.agenziaentrate.gov.it",
-  "agenziaentrate.gov.it",
+const AE_COOKIE_URLS = [
+  "https://ivaservizi.agenziaentrate.gov.it/ser/documenticommercialionline/",
+  "https://ivaservizi.agenziaentrate.gov.it/ser/api/documenti/v1/doc/documenti/dati/fiscali",
+  "https://ivaservizi.agenziaentrate.gov.it/common/testata/v1/info/me",
+  "https://ivaservizi.agenziaentrate.gov.it/portale/web/guest/home",
+  "https://portale.agenziaentrate.gov.it/PortaleWeb/home?to=FATBTB",
+  "https://www.agenziaentrate.gov.it/",
 ];
 
 async function collectCookies() {
   const allCookies = [];
-  const seen = new Set();
-
-  for (const domain of AE_DOMAINS) {
-    const list = await chrome.cookies.getAll({ domain });
-    for (const cookie of list) {
-      const key = `${cookie.name}=${cookie.value}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        allCookies.push(cookie);
-      }
-    }
+  // Query each real DCO URL. Chrome only returns cookies applicable to the
+  // requested path; querying the domain/root alone can miss cookies scoped to
+  // /ser or send an unrelated value.
+  for (const url of AE_COOKIE_URLS) {
+    try {
+      const list = await chrome.cookies.getAll({ url });
+      for (const cookie of list) allCookies.push(cookie);
+    } catch (_) {}
   }
 
-  try {
-    const list = await chrome.cookies.getAll({
-      url: "https://ivaservizi.agenziaentrate.gov.it",
-    });
-    for (const cookie of list) {
-      const key = `${cookie.name}=${cookie.value}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        allCookies.push(cookie);
-      }
+  // Keep the most specific cookie for a name/path combination. The backend
+  // receives a Cookie header, so duplicate names would otherwise be
+  // ambiguous and ADE could select the wrong session value.
+  const byName = new Map();
+  for (const cookie of allCookies) {
+    const existing = byName.get(cookie.name);
+    if (!existing || (cookie.path || "/").length > (existing.path || "/").length) {
+      byName.set(cookie.name, cookie);
     }
-  } catch (_) {}
-
-  return allCookies;
+  }
+  return [...byName.values()];
 }
 
 async function connectToApp(appUrl) {
@@ -42,12 +40,15 @@ async function connectToApp(appUrl) {
   if (cookies.length === 0) {
     throw new Error("Nessun cookie ADE trovato");
   }
+  const cookieNames = cookies.map((cookie) => cookie.name);
+  const dcoCookieNames = ["FATSC", "JSESSIONID"].filter((name) => cookieNames.includes(name));
 
   const response = await fetch(`${origin}/api/auth/cookie`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       cookieHeader: cookies.map((cookie) => `${cookie.name}=${cookie.value}`).join("; "),
+      cookieNames,
     }),
   });
 
@@ -57,7 +58,8 @@ async function connectToApp(appUrl) {
       connectionState: "disconnected",
       connectionError: data.error || `Errore server ${response.status}`,
     });
-    throw new Error(data.error || `Errore server ${response.status}`);
+    const diagnostic = data.details || `Cookie letti: ${cookieNames.join(", ") || "nessuno"}`;
+    throw new Error(`${data.error || `Errore server ${response.status}`} — ${diagnostic}`);
   }
 
   await chrome.storage.local.set({
@@ -79,7 +81,7 @@ async function connectToApp(appUrl) {
     }
   }
 
-  return { success: true, cookieCount: cookies.length };
+  return { success: true, cookieCount: cookies.length, dcoCookieNames };
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {

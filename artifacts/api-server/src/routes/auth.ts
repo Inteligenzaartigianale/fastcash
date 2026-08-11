@@ -201,8 +201,14 @@ router.get("/auth/status", async (req, res): Promise<void> => {
 // The user logs in on their real browser, copies cookie header from DevTools,
 // and pastes it here. We store it directly in the session without Puppeteer.
 router.post("/auth/cookie", async (req, res): Promise<void> => {
-  const { cookieHeader, identificativo: rawIdentifier, codiceFiscale: legacyIdentifier } = req.body as {
+  const {
+    cookieHeader,
+    cookieNames,
+    identificativo: rawIdentifier,
+    codiceFiscale: legacyIdentifier,
+  } = req.body as {
     cookieHeader?: string;
+    cookieNames?: unknown;
     identificativo?: string;
     codiceFiscale?: string;
   };
@@ -224,9 +230,15 @@ router.post("/auth/cookie", async (req, res): Promise<void> => {
   const normalizedCookies = cookieHeader.trim();
 
   if (!(await validateDcoCookies(normalizedCookies))) {
+    const names = Array.isArray(cookieNames)
+      ? cookieNames.filter((name): name is string => typeof name === "string")
+      : [];
+    const dcoNames = names.filter((name) => name === "FATSC" || name === "JSESSIONID");
     res.status(401).json({
       error: "Cookie ADE non validi per il servizio DCO",
-      details: "Apri il servizio Documenti Commerciali Online in Chrome, poi riconnetti l'estensione.",
+      details: dcoNames.length > 0
+        ? `Cookie DCO rilevati: ${dcoNames.join(", ")}. Apri il servizio Documenti Commerciali Online in Chrome, poi riconnetti l'estensione.`
+        : "Non sono stati rilevati cookie FATSC/JSESSIONID. Apri il servizio Documenti Commerciali Online in Chrome, poi riconnetti l'estensione.",
     });
     return;
   }

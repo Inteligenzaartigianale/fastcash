@@ -13,7 +13,10 @@ async function collectCookies() {
   for (const domain of AE_DOMAINS) {
     const list = await chrome.cookies.getAll({ domain });
     for (const cookie of list) {
-      const key = `${cookie.name}`;
+      // Dedup per nome=valore (stessa logica della versione pubblicata):
+      // se lo stesso cookie esiste per domini diversi con valori diversi,
+      // entrambi vengono inclusi perché ADE potrebbe richiedere entrambi.
+      const key = `${cookie.name}=${cookie.value}`;
       if (!seen.has(key)) {
         seen.add(key);
         allCookies.push(cookie);

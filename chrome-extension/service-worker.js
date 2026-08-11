@@ -1,46 +1,27 @@
-const AE_COOKIE_URLS = [
-  // ADE creates the FATSC cookie while crossing this hand-off endpoint.
-  // Querying only /ser and /common misses cookies scoped to /dp/PI2FC.
-  "https://ivaservizi.agenziaentrate.gov.it/dp/PI2FC",
-  "https://ivaservizi.agenziaentrate.gov.it/ser/documenticommercialionline/",
-  "https://ivaservizi.agenziaentrate.gov.it/ser/api/documenti/v1/doc/documenti/dati/fiscali",
-  "https://ivaservizi.agenziaentrate.gov.it/common/testata/v1/info/me",
-  "https://ivaservizi.agenziaentrate.gov.it/instr/InstradamentofcWeb/home",
-  "https://ivaservizi.agenziaentrate.gov.it/portale/web/guest/home",
-  "https://portale.agenziaentrate.gov.it/PortaleWeb/home?to=FATBTB",
-  "https://www.agenziaentrate.gov.it/",
+// Domains da cui raccogliere i cookie ADE.
+// Si usa { domain } e non { url } perché { url } applica filtri per percorso
+// e può escludere FATSC se ha un path diverso da quello interrogato.
+const AE_DOMAINS = [
+  "ivaservizi.agenziaentrate.gov.it",
+  "agenziaentrate.gov.it",
 ];
 
 async function collectCookies() {
   const allCookies = [];
-  // Query each real DCO URL. Chrome only returns cookies applicable to the
-  // requested path; querying the domain/root alone can miss cookies scoped to
-  // /ser or send an unrelated value.
-  for (const url of AE_COOKIE_URLS) {
-    try {
-      const list = await chrome.cookies.getAll({ url });
-      for (const cookie of list) allCookies.push(cookie);
-    } catch (_) {}
-  }
+  const seen = new Set();
 
-  // Keep the most specific cookie for a name/path combination. The backend
-  // receives a Cookie header, so duplicate names would otherwise be
-  // ambiguous and ADE could select the wrong session value.
-  const byName = new Map();
-  for (const cookie of allCookies) {
-    const existing = byName.get(cookie.name);
-    if (
-      !existing ||
-      (cookie.path || "/").length > (existing.path || "/").length ||
-      // Prefer the DCO host over a generic ADE host when both expose the
-      // same cookie name.
-      (cookie.domain || "").includes("ivaservizi") &&
-      !(existing.domain || "").includes("ivaservizi")
-    ) {
-      byName.set(cookie.name, cookie);
+  for (const domain of AE_DOMAINS) {
+    const list = await chrome.cookies.getAll({ domain });
+    for (const cookie of list) {
+      const key = `${cookie.name}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        allCookies.push(cookie);
+      }
     }
   }
-  return [...byName.values()];
+
+  return allCookies;
 }
 
 async function connectToApp(appUrl) {
@@ -51,6 +32,7 @@ async function connectToApp(appUrl) {
   if (cookies.length === 0) {
     throw new Error("Nessun cookie ADE trovato");
   }
+
   const cookieNames = cookies.map((cookie) => cookie.name);
   const dcoCookieNames = ["FATSC", "JSESSIONID"].filter((name) => cookieNames.includes(name));
 
@@ -69,7 +51,7 @@ async function connectToApp(appUrl) {
       connectionState: "disconnected",
       connectionError: data.error || `Errore server ${response.status}`,
     });
-    const diagnostic = data.details || `Cookie letti: ${cookieNames.join(", ") || "nessuno"}`;
+    const diagnostic = data.details || `Cookie trovati: ${cookieNames.join(", ") || "nessuno"}`;
     throw new Error(`${data.error || `Errore server ${response.status}`} — ${diagnostic}`);
   }
 

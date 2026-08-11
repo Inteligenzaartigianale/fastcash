@@ -1,7 +1,11 @@
 const AE_COOKIE_URLS = [
+  // ADE creates the FATSC cookie while crossing this hand-off endpoint.
+  // Querying only /ser and /common misses cookies scoped to /dp/PI2FC.
+  "https://ivaservizi.agenziaentrate.gov.it/dp/PI2FC",
   "https://ivaservizi.agenziaentrate.gov.it/ser/documenticommercialionline/",
   "https://ivaservizi.agenziaentrate.gov.it/ser/api/documenti/v1/doc/documenti/dati/fiscali",
   "https://ivaservizi.agenziaentrate.gov.it/common/testata/v1/info/me",
+  "https://ivaservizi.agenziaentrate.gov.it/instr/InstradamentofcWeb/home",
   "https://ivaservizi.agenziaentrate.gov.it/portale/web/guest/home",
   "https://portale.agenziaentrate.gov.it/PortaleWeb/home?to=FATBTB",
   "https://www.agenziaentrate.gov.it/",
@@ -25,7 +29,14 @@ async function collectCookies() {
   const byName = new Map();
   for (const cookie of allCookies) {
     const existing = byName.get(cookie.name);
-    if (!existing || (cookie.path || "/").length > (existing.path || "/").length) {
+    if (
+      !existing ||
+      (cookie.path || "/").length > (existing.path || "/").length ||
+      // Prefer the DCO host over a generic ADE host when both expose the
+      // same cookie name.
+      (cookie.domain || "").includes("ivaservizi") &&
+      !(existing.domain || "").includes("ivaservizi")
+    ) {
       byName.set(cookie.name, cookie);
     }
   }

@@ -2,7 +2,10 @@ const AE_DOMAINS = [
   "ivaservizi.agenziaentrate.gov.it",
   "agenziaentrate.gov.it",
 ];
-const DEFAULT_APP_URL = "";
+// Current published app URL. Users can still override it below if they use
+// another public domain, but a fresh install must not start with an old or
+// empty development URL.
+const DEFAULT_APP_URL = "https://link-sender-vignolinifederi.replit.app";
 
 const connectBtn = document.getElementById("connectBtn");
 const statusBox  = document.getElementById("status");

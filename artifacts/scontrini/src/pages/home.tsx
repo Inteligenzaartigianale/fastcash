@@ -351,8 +351,13 @@ export default function HomePage() {
       });
       return;
     }
-    const diff = Math.abs(totals.complessivo - totalePagato);
-    if (diff > 0.01) {
+    // Con gestione resto + contanti è valido che l'incassato superi il totale.
+    // Blocca solo se l'incassato è insufficiente (mancano soldi).
+    const pagamentoInsufficient =
+      gestioneResto && modoPagamento === "contanti"
+        ? importoContanti < totals.complessivo - 0.01
+        : Math.abs(totals.complessivo - totalePagato) > 0.01;
+    if (pagamentoInsufficient) {
       toast({ title: "Pagamento non quadra", description: `Mancano € ${formatCurrency(totals.complessivo - totalePagato)}`, variant: "destructive" });
       return;
     }
@@ -549,6 +554,13 @@ export default function HomePage() {
               Inserisci il progressivo completo del documento da rendere.
             </span>
           </div>
+          {resoProgressivo.trim() && (
+            <div className="mt-1.5 flex items-center gap-2 text-[11px] text-amber-700 font-medium">
+              <span>✓ Progressivo inserito</span>
+              <span className="text-amber-500">·</span>
+              <span>Ora seleziona gli articoli da rendere dal catalogo a sinistra, poi premi <strong>Emetti Documento</strong>.</span>
+            </div>
+          )}
         </div>
       )}
 
@@ -825,7 +837,11 @@ function CartPanel({ cart, totals, totalePagato, resto, modoPagamento, setModoPa
   fixedAmountText, onFixedAmountTextChange, mostraTicket, gestioneResto, onOpenFreeAmount, onSaveFreeAmount, onOpenHistory }: CartPanelProps) {
 
   const diff = totals.complessivo - totalePagato;
-  const balanced = Math.abs(diff) < 0.01;
+  // Con gestione resto + contanti l'incassato può superare il totale: è bilanciato
+  // se il cliente ha dato abbastanza (diff <= 0 significa incassato >= totale).
+  const balanced = gestioneResto && modoPagamento === "contanti"
+    ? diff <= 0.01   // incassato copre o supera il totale
+    : Math.abs(diff) < 0.01;
   const paymentModes: Array<"contanti" | "elettronico" | "ticket"> = mostraTicket
     ? ["contanti", "elettronico", "ticket"]
     : ["contanti", "elettronico"];

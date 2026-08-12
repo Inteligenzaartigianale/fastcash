@@ -1,10 +1,11 @@
 import { useLocation } from "wouter";
-import { ShoppingCart, Settings } from "lucide-react";
+import { ShoppingCart, Settings, HelpCircle } from "lucide-react";
 
 export function BottomNav() {
   const [location, setLocation] = useLocation();
 
   const items = [
+    { label: "Guida", icon: HelpCircle, path: "/guida" },
     { label: "Vendita", icon: ShoppingCart, path: "/" },
     { label: "Impostazioni", icon: Settings, path: "/admin" },
   ];

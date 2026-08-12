@@ -27,7 +27,7 @@ async function loginWithCookies(identificativo: string, cookieHeader: string): P
 
 async function checkStatus(): Promise<boolean> {
   try {
-    const res = await fetch(`${BASE}/api/ae/status`, { cache: "no-store" });
+    const res = await fetch(`${BASE}/api/auth/status`, { cache: "no-store" });
     if (!res.ok) return false;
     const data = await res.json() as { authenticated?: boolean };
     return data.authenticated === true;

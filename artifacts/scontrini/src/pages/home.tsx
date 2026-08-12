@@ -169,6 +169,9 @@ export default function HomePage() {
   const [nTicket, setNTicket] = useState("");
   const [tipoOp, setTipoOp] = useState("Vendita/Prestazione");
   const [resoProgressivo, setResoProgressivo] = useState("");
+  const [resoForzato, setResoForzato] = useState(false);
+  const [resoImportoParziale, setResoImportoParziale] = useState("");
+  const [resoAliquotaIva, setResoAliquotaIva] = useState<AliquotaIva>("N1");
   const [lotteria, setLotteria] = useState("");
   const [emissioneRiuscita, setEmissioneRiuscita] = useState<{
     numeroDocumento: string;
@@ -207,15 +210,32 @@ export default function HomePage() {
     }
   }, [cat.impostazioni?.mostraTicket, modoPagamento]);
 
+  // Legge URL params (?tipoOp=Reso&progressivo=DCW...) per avviare il reso
+  // direttamente dallo storico.
   useEffect(() => {
-    if (!mostraTipoOperazione) {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("tipoOp") === "Reso") {
+      setTipoOp("Reso");
+      setResoForzato(true);
+      const prog = params.get("progressivo");
+      if (prog) setResoProgressivo(prog.toUpperCase());
+    }
+  }, []);
+
+  useEffect(() => {
+    // Non resettare se il reso è stato avviato via URL param
+    if (!mostraTipoOperazione && !resoForzato) {
       setTipoOp("Vendita/Prestazione");
       setResoProgressivo("");
     }
-  }, [mostraTipoOperazione]);
+  }, [mostraTipoOperazione, resoForzato]);
 
   useEffect(() => {
-    if (tipoOp !== "Reso") setResoProgressivo("");
+    if (tipoOp !== "Reso") {
+      setResoProgressivo("");
+      setResoForzato(false);
+      setResoImportoParziale("");
+    }
   }, [tipoOp]);
 
   const totalePagato = modoPagamento === "contanti"
@@ -302,6 +322,23 @@ export default function HomePage() {
     }]);
     setShowFreeAmount(false);
   }, [cat.reparti]);
+
+  // Aggiunge un importo reso parziale al carrello (senza articolo catalogo)
+  const handleAddResoImporto = useCallback(() => {
+    const amount = Number(resoImportoParziale.replace(",", "."));
+    if (!Number.isFinite(amount) || amount <= 0) return;
+    setCart(prev => [...prev, {
+      articoloId: "",
+      nome: "Reso",
+      prezzoUnitario: amount,
+      aliquotaIva: resoAliquotaIva,
+      repartoId: cat.reparti[0]?.id ?? "",
+      quantita: 1,
+      sconto: 0,
+      omaggio: false,
+    }]);
+    setResoImportoParziale("");
+  }, [resoImportoParziale, resoAliquotaIva, cat.reparti]);
 
   const updateQty = (idx: number, delta: number) => {
     setCart(prev => {
@@ -536,8 +573,9 @@ export default function HomePage() {
         </div>
       </header>
 
-      {mostraTipoOperazione && tipoOp === "Reso" && (
-        <div className="border-b border-amber-200 bg-amber-50 px-4 py-2.5">
+      {tipoOp === "Reso" && (
+        <div className="border-b border-amber-200 bg-amber-50 px-4 py-2.5 space-y-2">
+          {/* Riga 1: progressivo */}
           <div className="mx-auto flex w-full max-w-5xl flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
             <label htmlFor="reso-progressivo" className="shrink-0 text-xs font-semibold text-amber-900">
               Documento originario
@@ -548,17 +586,39 @@ export default function HomePage() {
               onChange={(event) => setResoProgressivo(event.target.value.toUpperCase())}
               placeholder="Es. DCW2026/2255-2524"
               className="h-8 max-w-md bg-white text-xs font-mono"
-              aria-describedby="reso-progressivo-help"
             />
-            <span id="reso-progressivo-help" className="text-[11px] text-amber-800">
-              Inserisci il progressivo completo del documento da rendere.
-            </span>
           </div>
+          {/* Riga 2: importo parziale */}
           {resoProgressivo.trim() && (
-            <div className="mt-1.5 flex items-center gap-2 text-[11px] text-amber-700 font-medium">
-              <span>✓ Progressivo inserito</span>
-              <span className="text-amber-500">·</span>
-              <span>Ora seleziona gli articoli da rendere dal catalogo a sinistra, poi premi <strong>Emetti Documento</strong>.</span>
+            <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center gap-2">
+              <span className="shrink-0 text-xs font-semibold text-amber-900">Importo da rendere</span>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={resoImportoParziale}
+                onChange={e => setResoImportoParziale(e.target.value)}
+                placeholder="0,00"
+                className="h-8 w-28 rounded-md border bg-white px-2 text-right text-xs font-mono focus:outline-none focus:ring-1 focus:ring-amber-400"
+              />
+              <Select value={resoAliquotaIva} onValueChange={v => setResoAliquotaIva(v as AliquotaIva)}>
+                <SelectTrigger className="h-8 w-28 bg-white text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {IVA_OPTIONS.map(iva => (
+                    <SelectItem key={iva} value={iva}>{ivaLabel(iva)}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                size="sm"
+                className="h-8 bg-amber-600 hover:bg-amber-700 text-white text-xs px-3"
+                onClick={handleAddResoImporto}
+                disabled={!resoImportoParziale || Number(resoImportoParziale.replace(",", ".")) <= 0}
+              >
+                + Aggiungi al carrello
+              </Button>
+              <span className="text-[11px] text-amber-700">oppure seleziona articoli dal catalogo</span>
             </div>
           )}
         </div>

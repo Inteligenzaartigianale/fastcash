@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { AlertTriangle, ArrowLeft, CheckCircle2, FileText, Plus, LogOut, XCircle } from "lucide-react";
+import { AlertTriangle, ArrowLeft, CheckCircle2, FileText, Plus, LogOut, XCircle, RotateCcw } from "lucide-react";
 import { useLocation } from "wouter";
 import { useAnnullaDocumento, useGetDocumento, useLogout } from "@workspace/api-client-react";
 import type { DocumentoResult, RigaDocumento } from "@workspace/api-client-react";
@@ -146,15 +146,25 @@ export default function RisultatoPage() {
             {archivedDocument.tipoOperazione !== "Annullo" &&
               archivedDocument.tipoOperazione !== "Reso" &&
               archivedDocument.stato !== "Annullato" && (
-              <Button
-                variant="outline"
-                className="w-full border-red-200 text-red-700 hover:bg-red-50"
-                onClick={() => setShowAnnulla(true)}
-                disabled={annullaMutation.isPending}
-              >
-                <XCircle className="mr-2 h-4 w-4" />
-                Annulla documento
-              </Button>
+              <>
+                <Button
+                  variant="outline"
+                  className="w-full border-amber-300 text-amber-800 hover:bg-amber-50"
+                  onClick={() => setLocation(`/?tipoOp=Reso&progressivo=${encodeURIComponent(archivedDocument.numeroDocumento ?? "")}`)}
+                >
+                  <RotateCcw className="mr-2 h-4 w-4" />
+                  Avvia Reso
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full border-red-200 text-red-700 hover:bg-red-50"
+                  onClick={() => setShowAnnulla(true)}
+                  disabled={annullaMutation.isPending}
+                >
+                  <XCircle className="mr-2 h-4 w-4" />
+                  Annulla documento
+                </Button>
+              </>
             )}
             {archivedDocument.stato === "Annullato" && (
               <div className="flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">

@@ -13,27 +13,40 @@ function formatDate(value: string): string {
   return year && month && day ? `${day}/${month}/${year}` : value;
 }
 
-function DocumentRow({ document, onOpen }: { document: DocumentoArchiviato; onOpen: () => void }) {
+function DocumentRow({ document, onOpen, onReso }: { document: DocumentoArchiviato; onOpen: () => void; onReso?: () => void }) {
+  const canReso = document.tipoOperazione === "Vendita/Prestazione" && document.stato !== "Annullato";
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className="flex w-full items-center gap-3 border-b bg-white px-4 py-3 text-left transition-colors hover:bg-blue-50 active:bg-blue-100"
-    >
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#1e3a5f]/10 text-[#1e3a5f]">
-        <ReceiptText className="h-4 w-4" />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-semibold text-gray-800">{document.numeroDocumento}</span>
-        <span className="mt-0.5 block text-xs text-gray-500">
-          {formatDate(document.dataEmissione)} · {document.tipoOperazione} · {document.stato} · {document.righe.length} {document.righe.length === 1 ? "riga" : "righe"}
+    <div className="flex w-full items-center gap-3 border-b bg-white px-4 py-3 transition-colors hover:bg-blue-50">
+      <button
+        type="button"
+        onClick={onOpen}
+        className="flex min-w-0 flex-1 items-center gap-3 text-left"
+      >
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#1e3a5f]/10 text-[#1e3a5f]">
+          <ReceiptText className="h-4 w-4" />
         </span>
-      </span>
-      <span className="shrink-0 text-right">
-        <span className="block font-mono text-sm font-bold text-gray-800">€ {formatCurrency(document.totale)}</span>
-        <ChevronRight className="ml-auto mt-0.5 h-4 w-4 text-gray-300" />
-      </span>
-    </button>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-semibold text-gray-800">{document.numeroDocumento}</span>
+          <span className="mt-0.5 block text-xs text-gray-500">
+            {formatDate(document.dataEmissione)} · {document.tipoOperazione} · {document.stato} · {document.righe.length} {document.righe.length === 1 ? "riga" : "righe"}
+          </span>
+        </span>
+        <span className="shrink-0 text-right">
+          <span className="block font-mono text-sm font-bold text-gray-800">€ {formatCurrency(document.totale)}</span>
+          <ChevronRight className="ml-auto mt-0.5 h-4 w-4 text-gray-300" />
+        </span>
+      </button>
+      {canReso && onReso && (
+        <button
+          type="button"
+          onClick={e => { e.stopPropagation(); onReso(); }}
+          className="shrink-0 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-800 hover:bg-amber-100 active:bg-amber-200"
+          title="Avvia reso"
+        >
+          Reso
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -125,6 +138,7 @@ export default function StoricoPage() {
                 key={document.id}
                 document={document}
                 onOpen={() => setLocation(`/risultato?id=${encodeURIComponent(document.id)}`)}
+                onReso={() => setLocation(`/?tipoOp=Reso&progressivo=${encodeURIComponent(document.numeroDocumento ?? "")}`)}
               />
             ))
           )}

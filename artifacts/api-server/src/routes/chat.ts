@@ -99,7 +99,7 @@ router.post("/api/chat", async (req, res) => {
 
   try {
     const stream = await openai.chat.completions.create({
-      model: "gpt-5.6-luna",
+      model: "gpt-4o",
       max_completion_tokens: 1024,
       messages: [
         { role: "system", content: SYSTEM_PROMPT },

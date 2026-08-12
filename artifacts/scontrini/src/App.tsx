@@ -8,7 +8,6 @@ import LoginPage from '@/pages/login';
 import RisultatoPage from '@/pages/risultato';
 import AdminPage from '@/pages/admin';
 import StoricoPage from '@/pages/storico';
-import GuidaPage from '@/pages/guida';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -22,7 +21,6 @@ const queryClient = new QueryClient({
 function Router() {
   return (
     <Switch>
-      <Route path="/guida" component={GuidaPage} />
       <Route path="/" component={HomePage} />
       <Route path="/login" component={LoginPage} />
       <Route path="/risultato" component={RisultatoPage} />

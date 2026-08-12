@@ -1,29 +1,9 @@
 import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Shield, Loader2, ClipboardPaste, ChevronDown, ChevronUp, CheckCircle2, Puzzle, RefreshCw } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Shield, RefreshCw, CheckCircle2, Puzzle } from "lucide-react";
 
 const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
-
-async function loginWithCookies(identificativo: string, cookieHeader: string): Promise<void> {
-  const res = await fetch(`${BASE}/api/auth/cookie`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ identificativo, cookieHeader }),
-  });
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({})) as { error?: string; details?: string };
-    throw Object.assign(
-      new Error(data.error ?? "Errore nell'invio dei cookie"),
-      { details: (data as { details?: string }).details },
-    );
-  }
-}
 
 async function checkStatus(): Promise<boolean> {
   try {
@@ -38,22 +18,11 @@ async function checkStatus(): Promise<boolean> {
 
 export default function LoginPage() {
   const [, setLocation] = useLocation();
-  const { toast } = useToast();
-
-  // Extension polling
   const [pollStatus, setPollStatus] = useState<"waiting" | "detected">("waiting");
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Manual cookie form
-  const [showManual, setShowManual] = useState(false);
-  const [cfCookie, setCfCookie] = useState("");
-  const [cookieHeader, setCookieHeader] = useState("");
-  const [isCookiePending, setIsCookiePending] = useState(false);
-
-  // App URL for the extension (published or dev)
   const appUrl = window.location.origin + (BASE || "");
 
-  // Auto-poll: as soon as the extension sends cookies the server marks us logged in
   useEffect(() => {
     const doPoll = async () => {
       const ok = await checkStatus();
@@ -64,39 +33,10 @@ export default function LoginPage() {
       }
     };
 
-    // Check immediately on mount
     doPoll();
-
-    // Then every 3 seconds
     pollRef.current = setInterval(doPoll, 3000);
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [setLocation]);
-
-  const handleCookieSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!cfCookie.trim()) {
-      toast({ title: "Errore", description: "Inserisci il codice fiscale o la Partita IVA.", variant: "destructive" });
-      return;
-    }
-    if (!cookieHeader.trim() || cookieHeader.trim().length < 20) {
-      toast({ title: "Errore", description: "Incolla i cookie copiati dal browser.", variant: "destructive" });
-      return;
-    }
-    setIsCookiePending(true);
-    try {
-      await loginWithCookies(cfCookie.trim(), cookieHeader.trim());
-      setLocation("/");
-    } catch (err) {
-      const cookieError = err as Error & { details?: string };
-      toast({
-        title: "Sessione ADE non collegata",
-        description: cookieError.details || cookieError.message || "Cookie non validi o sessione scaduta.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsCookiePending(false);
-    }
-  };
 
   return (
     <div className="min-h-[100dvh] flex items-center justify-center bg-background px-4 py-8">
@@ -120,7 +60,7 @@ export default function LoginPage() {
               </div>
               <div>
                 <CardTitle className="text-base">Accedi con l'estensione Chrome</CardTitle>
-                <CardDescription className="text-xs mt-0.5">Metodo consigliato — nessuna credenziale da inserire</CardDescription>
+                <CardDescription className="text-xs mt-0.5">Nessuna credenziale da inserire nell'app</CardDescription>
               </div>
             </div>
           </CardHeader>
@@ -179,85 +119,12 @@ export default function LoginPage() {
               </li>
               <li className="flex gap-3">
                 <span className="flex items-center justify-center w-6 h-6 rounded-full bg-green-600 text-white text-xs font-bold shrink-0 mt-0.5">✓</span>
-                <span>Questa pagina entrerà automaticamente nell'app — non serve fare altro</span>
+                <span>Questa pagina entra automaticamente nell'app — non serve fare altro</span>
               </li>
             </ol>
 
           </CardContent>
         </Card>
-
-        {/* Manual cookie fallback — collapsible */}
-        <div className="rounded-lg border border-border overflow-hidden">
-          <button
-            type="button"
-            onClick={() => setShowManual(v => !v)}
-            className="w-full flex items-center justify-between px-4 py-3 text-sm text-muted-foreground hover:bg-muted/50 transition-colors"
-          >
-            <span className="flex items-center gap-2">
-              <ClipboardPaste className="w-4 h-4" />
-              Alternativa: incolla i cookie manualmente
-            </span>
-            {showManual ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-          </button>
-
-          {showManual && (
-            <form onSubmit={handleCookieSubmit}>
-              <div className="px-4 pb-4 pt-2 space-y-4 border-t border-border bg-muted/10">
-                <div className="text-xs text-muted-foreground bg-muted rounded p-3 space-y-1">
-                  <p className="font-medium text-foreground">Come copiare i cookie:</p>
-                  <ol className="list-decimal list-inside space-y-1 leading-relaxed">
-                    <li>Apri <strong>ivaservizi.agenziaentrate.gov.it</strong> e accedi con Fisconline</li>
-                    <li>Premi <strong>F12</strong> → scheda <strong>Network</strong></li>
-                    <li>Ricarica la pagina, clicca su una richiesta al dominio <em>ivaservizi</em></li>
-                    <li>In <strong>Request Headers</strong> trova la riga <strong>Cookie:</strong> e copia il valore</li>
-                  </ol>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="cf-cookie">Codice fiscale o Partita IVA</Label>
-                  <Input
-                    id="cf-cookie"
-                    type="text"
-                    placeholder="CF o P.IVA"
-                    value={cfCookie}
-                    onChange={(e) => setCfCookie(e.target.value.toUpperCase().trim())}
-                    disabled={isCookiePending}
-                    autoCapitalize="none"
-                    autoCorrect="off"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="cookie-header">Cookie copiati dal browser</Label>
-                  <Textarea
-                    id="cookie-header"
-                    placeholder="FATSC=abc123; JSESSIONID=xyz; ..."
-                    value={cookieHeader}
-                    onChange={(e) => setCookieHeader(e.target.value)}
-                    disabled={isCookiePending}
-                    className="font-mono text-xs min-h-[90px] resize-none"
-                    autoComplete="off"
-                    spellCheck={false}
-                  />
-                </div>
-
-                <Button type="submit" className="w-full" disabled={isCookiePending}>
-                  {isCookiePending ? (
-                    <span className="flex items-center gap-2">
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Verifica…
-                    </span>
-                  ) : (
-                    <span className="flex items-center gap-2">
-                      <ClipboardPaste className="w-4 h-4" />
-                      Accedi con questi cookie
-                    </span>
-                  )}
-                </Button>
-              </div>
-            </form>
-          )}
-        </div>
 
       </div>
     </div>

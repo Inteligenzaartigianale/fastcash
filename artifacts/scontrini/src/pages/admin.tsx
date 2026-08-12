@@ -10,6 +10,7 @@ import {
 } from "@/lib/catalog";
 import { Plus, Pencil, Trash2, Check, Keyboard, Ticket, Banknote, ListFilter } from "lucide-react";
 import { BottomNav } from "@/components/bottom-nav";
+import { GuidaChat } from "@/components/guida-chat";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -24,7 +25,7 @@ const IVA_OPTIONS: AliquotaIva[] = ["22", "10", "5", "4", "N1", "N2", "N3", "N4"
 const COLORI = ["#ef4444","#f97316","#eab308","#22c55e","#14b8a6","#3b82f6","#8b5cf6","#ec4899","#6b7280","#1e3a5f"];
 
 export default function AdminPage() {
-  const [tab, setTab] = useState<"generali" | "reparti" | "articoli" | "aliquote" | "visualizzazione">("generali");
+  const [tab, setTab] = useState<"guida" | "generali" | "reparti" | "articoli" | "aliquote" | "visualizzazione">("guida");
   const qc = useQueryClient();
   const { data: catalog, isLoading } = useQuery({ queryKey: ["catalog"], queryFn: fetchCatalog });
   const invalidate = () => qc.invalidateQueries({ queryKey: ["catalog"] });
@@ -48,15 +49,16 @@ export default function AdminPage() {
         <h1 className="font-bold text-base">⚙️ Impostazioni</h1>
       </header>
 
-      <div className="bg-white border-b px-4 flex gap-1 shrink-0">
-        {(["generali", "reparti", "articoli", "aliquote", "visualizzazione"] as const).map(t => (
+      <div className="bg-white border-b px-2 flex gap-0 shrink-0 overflow-x-auto">
+        {(["guida", "generali", "reparti", "articoli", "aliquote", "visualizzazione"] as const).map(t => (
           <button key={t} onClick={() => setTab(t)}
-            className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors capitalize ${tab === t ? "border-[#1e3a5f] text-[#1e3a5f]" : "border-transparent text-gray-500 hover:text-gray-700"}`}
+            className={`px-3 py-3 text-sm font-medium border-b-2 transition-colors capitalize whitespace-nowrap ${tab === t ? "border-[#1e3a5f] text-[#1e3a5f]" : "border-transparent text-gray-500 hover:text-gray-700"}`}
          >{t}</button>
         ))}
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 max-w-2xl w-full mx-auto">
+      <div className={`flex-1 overflow-y-auto max-w-2xl w-full mx-auto ${tab === "guida" ? "p-3 flex flex-col" : "p-4"}`}>
+         {tab === "guida"    && <GuidaChat />}
          {tab === "generali" && <GeneraliPanel catalog={catalog} onRefresh={invalidate} />}
          {tab === "reparti"  && <RepartiPanel  catalog={catalog} onRefresh={invalidate} />}
         {tab === "articoli" && <ArticoliPanel catalog={catalog} onRefresh={invalidate} />}

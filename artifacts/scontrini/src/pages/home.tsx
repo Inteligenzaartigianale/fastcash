@@ -401,7 +401,6 @@ export default function HomePage() {
     setImportoTicket(0);
     setNTicket("");
     setCartDiscount(null);
-    setShowCart(false);
   };
 
   // ── Submit ────────────────────────────────────────────────────────────────

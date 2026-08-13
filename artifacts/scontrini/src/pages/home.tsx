@@ -166,6 +166,7 @@ export default function HomePage() {
     try { sessionStorage.setItem("scontrini_cart", JSON.stringify(cart)); } catch { /* storage pieno */ }
   }, [cart]);
   const [cartExpanded, setCartExpanded] = useState(false);
+  const [cartSidebarOpen, setCartSidebarOpen] = useState(false);
   const [priceInputArt, setPriceInputArt] = useState<Articolo | null>(null);
   const [priceInputText, setPriceInputText] = useState("0");
   const [editIdx, setEditIdx] = useState<number | null>(null); // item being edited
@@ -759,29 +760,52 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* ── RIGHT: CART PANEL (mobile compact, always visible) ── */}
-        <div className="flex md:hidden w-32 flex-col bg-white border-l shrink-0">
-          <MobileCompactCart
-            cart={cart}
-            totals={totals}
-            totaleConSconto={totaleConSconto}
-            discountAmount={discountAmount}
-            cartDiscount={cartDiscount}
-            modoPagamento={modoPagamento}
-            setModoPagamento={selectPaymentMode}
-            onUpdateQty={updateQty}
-            onClear={clearCart}
-            onSubmit={handleSubmit}
-            isPending={inviaMutation.isPending}
-            cartExpanded={cartExpanded}
-            onToggleExpand={() => setCartExpanded(v => !v)}
-            onLongPressItem={(idx) => {
-              setChangePriceIdx(idx);
-              setChangePriceText(cart[idx].prezzoUnitario.toFixed(2).replace(".", ","));
-            }}
-            onLongPressTotal={() => setShowDiscountDialog(true)}
-            onRemoveDiscount={() => setCartDiscount(null)}
-          />
+        {/* ── RIGHT: CART PANEL (mobile compact, collassabile) ── */}
+        <div className={`flex md:hidden flex-col bg-white border-l shrink-0 transition-all duration-200 ${cartSidebarOpen ? "w-32" : "w-10"}`}>
+          {cartSidebarOpen ? (
+            <MobileCompactCart
+              cart={cart}
+              totals={totals}
+              totaleConSconto={totaleConSconto}
+              discountAmount={discountAmount}
+              cartDiscount={cartDiscount}
+              modoPagamento={modoPagamento}
+              setModoPagamento={selectPaymentMode}
+              onUpdateQty={updateQty}
+              onClear={clearCart}
+              onSubmit={handleSubmit}
+              isPending={inviaMutation.isPending}
+              cartExpanded={cartExpanded}
+              onToggleExpand={() => setCartExpanded(v => !v)}
+              onLongPressItem={(idx) => {
+                setChangePriceIdx(idx);
+                setChangePriceText(cart[idx].prezzoUnitario.toFixed(2).replace(".", ","));
+              }}
+              onLongPressTotal={() => setShowDiscountDialog(true)}
+              onRemoveDiscount={() => setCartDiscount(null)}
+              onCollapse={() => setCartSidebarOpen(false)}
+            />
+          ) : (
+            /* Carrello collassato: solo icona + conteggio + totale verticale */
+            <button
+              className="flex flex-col items-center justify-start gap-1 pt-3 px-1 h-full w-full active:bg-gray-50"
+              onClick={() => setCartSidebarOpen(true)}
+            >
+              <div className="relative">
+                <ShoppingCart className="w-5 h-5 text-gray-500" />
+                {cart.length > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 bg-[#1e3a5f] text-white text-[8px] font-bold rounded-full w-3.5 h-3.5 flex items-center justify-center">
+                    {cart.reduce((s, i) => s + i.quantita, 0)}
+                  </span>
+                )}
+              </div>
+              {cart.length > 0 && (
+                <span className="text-[8px] font-bold text-[#1e3a5f] font-mono writing-mode-vertical" style={{ writingMode: "vertical-rl", textOrientation: "mixed" }}>
+                  €{formatCurrency(totaleConSconto)}
+                </span>
+              )}
+            </button>
+          )}
         </div>
 
         {/* ── RIGHT: CART PANEL (desktop) ── */}
@@ -1179,7 +1203,7 @@ function MobileCompactCart({
   cart, totals, totaleConSconto, discountAmount, cartDiscount,
   modoPagamento, setModoPagamento,
   onUpdateQty, onClear, onSubmit, isPending, cartExpanded, onToggleExpand,
-  onLongPressItem, onLongPressTotal, onRemoveDiscount,
+  onLongPressItem, onLongPressTotal, onRemoveDiscount, onCollapse,
 }: {
   cart: CartItem[];
   totals: ReturnType<typeof calcTotals>;
@@ -1197,6 +1221,7 @@ function MobileCompactCart({
   onLongPressItem: (idx: number) => void;
   onLongPressTotal: () => void;
   onRemoveDiscount: () => void;
+  onCollapse: () => void;
 }) {
   const lastTapRef = useRef<number>(0);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1228,6 +1253,9 @@ function MobileCompactCart({
     <div className="h-full flex flex-col overflow-hidden">
       {/* Header */}
       <div className="px-1.5 py-1.5 border-b flex items-center justify-between shrink-0 bg-gray-50">
+        <button onClick={onCollapse} className="text-gray-400 hover:text-gray-600 transition-colors" title="Chiudi carrello">
+          <ChevronLeft className="w-3.5 h-3.5" />
+        </button>
         <span className="text-[9px] font-semibold text-gray-600 flex items-center gap-0.5">
           <ShoppingCart className="w-3 h-3" />
           {cart.length > 0 ? `${cart.reduce((s, i) => s + i.quantita, 0)}` : "0"}
@@ -1256,9 +1284,11 @@ function MobileCompactCart({
               <div
                 key={idx}
                 className="px-1.5 py-1 flex items-center gap-0.5 select-none"
+                style={{ touchAction: "none" }}
                 onPointerDown={() => startItemLongPress(idx)}
                 onPointerUp={cancelItemLongPress}
                 onPointerLeave={cancelItemLongPress}
+                onPointerCancel={cancelItemLongPress}
                 onContextMenu={(e) => { e.preventDefault(); onLongPressItem(idx); }}
               >
                 <div className="flex-1 min-w-0">
@@ -1780,6 +1810,8 @@ function EditItemDialog({ item, onSave, onClose }: { item: CartItem; onSave: (p:
   const [sconto, setSconto] = useState(item.sconto);
   const [omaggio, setOmaggio] = useState(item.omaggio);
 
+  const ivaBloccata = isNaturaIva(item.aliquotaIva);
+
   return (
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-sm">
@@ -1793,12 +1825,18 @@ function EditItemDialog({ item, onSave, onClose }: { item: CartItem; onSave: (p:
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs text-gray-500">Aliquota IVA</Label>
-            <Select value={iva} onValueChange={v => setIva(v as AliquotaIva)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {IVA_OPTIONS.map(o => <SelectItem key={o} value={o}>{ivaLabel(o)}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            {ivaBloccata ? (
+              <div className="h-10 rounded border bg-gray-50 px-3 flex items-center text-sm text-gray-600 font-mono">
+                {ivaLabel(item.aliquotaIva)} <span className="ml-2 text-[10px] text-gray-400">(non modificabile)</span>
+              </div>
+            ) : (
+              <Select value={iva} onValueChange={v => setIva(v as AliquotaIva)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {IVA_OPTIONS.map(o => <SelectItem key={o} value={o}>{ivaLabel(o)}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            )}
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs text-gray-500">Sconto riga €</Label>

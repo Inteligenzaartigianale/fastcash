@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
-import { Send, Loader2, Bot, User, ImagePlus, Sparkles } from "lucide-react";
+import { Send, Loader2, Bot, User, ImagePlus, Sparkles, ShoppingCart } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useLocation } from "wouter";
 
 import { getApiBase } from "@/lib/capacitor";
 import { getAuthHeaders } from "@/lib/auth-token";
@@ -74,6 +75,7 @@ function formatMessage(text: string) {
 }
 
 export function GuidaChat() {
+  const [, setLocation] = useLocation();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -221,6 +223,14 @@ export function GuidaChat() {
           </div>
           <p className="text-xs text-gray-500">Chiedi come usare l'app</p>
         </div>
+        <button
+          onClick={() => setLocation("/")}
+          className="shrink-0 flex items-center gap-1.5 bg-[#1e3a5f] text-white text-xs font-semibold px-3 py-2 rounded-lg hover:bg-[#162d4a] active:scale-95 transition-all"
+          title="Torna alla cassa"
+        >
+          <ShoppingCart className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline">Cassa</span>
+        </button>
       </div>
 
       {/* Chat messages */}

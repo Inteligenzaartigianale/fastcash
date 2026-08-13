@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { useGetAeStatus, useGetMe, useInviaDocumento, useLogout, getGetMeQueryKey, getGetAeStatusQueryKey } from "@workspace/api-client-react";
 import { useRequireAuth } from "@/hooks/use-require-auth";
@@ -160,7 +160,9 @@ export default function HomePage() {
 
   // Cart
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [showCart, setShowCart] = useState(false); // mobile overlay
+  const [cartExpanded, setCartExpanded] = useState(false);
+  const [priceInputArt, setPriceInputArt] = useState<Articolo | null>(null);
+  const [priceInputText, setPriceInputText] = useState("0");
   const [editIdx, setEditIdx] = useState<number | null>(null); // item being edited
   const [showFreeAmount, setShowFreeAmount] = useState(false);
   const [fixedAmountText, setFixedAmountText] = useState("");
@@ -310,6 +312,15 @@ export default function HomePage() {
       }];
     });
   }, [cat.impostazioni?.tastieraFissa, fixedAmountText, cart.length]);
+
+  const handleArticoloClick = useCallback((art: Articolo) => {
+    if (art.prezzoUnitario === 0) {
+      setPriceInputArt(art);
+      setPriceInputText("0");
+    } else {
+      addToCart(art);
+    }
+  }, [addToCart]);
 
   const addFreeAmount = useCallback((amount: number, repartoId: string, aliquotaIva: AliquotaIva) => {
     const reparto = cat.reparti.find(r => r.id === repartoId);
@@ -674,7 +685,7 @@ export default function HomePage() {
                   return (
                     <button
                       key={art.id}
-                      onClick={() => addToCart(art)}
+                      onClick={() => handleArticoloClick(art)}
                       className="bg-white rounded-xl p-3 text-left shadow-sm border-2 hover:shadow-md active:scale-95 transition-all flex flex-col justify-between shrink-0"
                       title={`${art.nome} · scorta: ${giacenza} · venduti: ${art.pezziVenduti ?? 0}`}
                       style={{
@@ -698,6 +709,22 @@ export default function HomePage() {
               </div>
             )}
           </div>
+        </div>
+
+        {/* ── RIGHT: CART PANEL (mobile compact, always visible) ── */}
+        <div className="flex md:hidden w-40 flex-col bg-white border-l shrink-0">
+          <MobileCompactCart
+            cart={cart}
+            totals={totals}
+            modoPagamento={modoPagamento}
+            setModoPagamento={selectPaymentMode}
+            onUpdateQty={updateQty}
+            onClear={clearCart}
+            onSubmit={handleSubmit}
+            isPending={inviaMutation.isPending}
+            cartExpanded={cartExpanded}
+            onToggleExpand={() => setCartExpanded(v => !v)}
+          />
         </div>
 
         {/* ── RIGHT: CART PANEL (desktop) ── */}
@@ -738,63 +765,18 @@ export default function HomePage() {
         </div>
       </div>
 
-      {/* ── MOBILE: Cart FAB ── */}
-      {(cart.length > 0 || (cat.impostazioni?.tastieraFissa ?? false)) && !showCart && (
-        <button
-          onClick={() => setShowCart(true)}
-          className="md:hidden fixed bottom-4 right-4 bg-[#1e3a5f] text-white rounded-full px-5 py-3 shadow-xl flex items-center gap-3 z-30 active:scale-95 transition-transform"
-        >
-          <ShoppingCart className="w-5 h-5" />
-          <span className="font-bold">{cart.length > 0 ? `${cart.reduce((s, i) => s + i.quantita, 0)} art.` : "Cassa"}</span>
-          {cart.length > 0 && <span className="font-mono font-bold">€ {formatCurrency(totals.complessivo)}</span>}
-        </button>
-      )}
-
-      {/* ── MOBILE: Cart overlay ── */}
-      {showCart && (
-        <div className="md:hidden fixed inset-0 bg-white z-40 flex flex-col">
-          <div className="flex items-center gap-3 px-4 py-3 border-b bg-[#1e3a5f] text-white">
-            <button onClick={() => setShowCart(false)} className="hover:opacity-70">
-              <ChevronLeft className="w-5 h-5" />
-            </button>
-            <h2 className="font-semibold flex-1">Carrello</h2>
-          </div>
-          <div className="flex-1 overflow-hidden">
-            <CartPanel
-              cart={cart}
-              totals={totals}
-              totalePagato={totalePagato}
-              resto={resto}
-              modoPagamento={modoPagamento}
-              setModoPagamento={selectPaymentMode}
-              importoContanti={importoContanti}
-              setImportoContanti={setImportoContanti}
-              importoElettronico={importoElettronic}
-              setImportoElettronico={setImportoElettronico}
-              importoTicket={importoTicket}
-              setImportoTicket={setImportoTicket}
-              nTicket={nTicket}
-              setNTicket={setNTicket}
-              lotteria={lotteria}
-              setLotteria={setLotteria}
-              onUpdateQty={updateQty}
-              onRemove={removeItem}
-              onEdit={setEditIdx}
-              onClear={clearCart}
-              onSubmit={handleSubmit}
-              isPending={inviaMutation.isPending}
-              reparti={cat.reparti}
-              tastieraFissa={cat.impostazioni?.tastieraFissa ?? false}
-              fixedAmountText={fixedAmountText}
-              onFixedAmountTextChange={handleFixedAmountTextChange}
-              mostraTicket={cat.impostazioni?.mostraTicket ?? false}
-              gestioneResto={gestioneResto}
-              onOpenFreeAmount={() => setShowFreeAmount(true)}
-              onSaveFreeAmount={addFreeAmount}
-              onOpenHistory={() => setLocation("/storico")}
-            />
-          </div>
-        </div>
+      {/* ── Price input numpad (articolo prezzo 0) ── */}
+      {priceInputArt && (
+        <PriceNumpadDialog
+          art={priceInputArt}
+          text={priceInputText}
+          onTextChange={setPriceInputText}
+          onConfirm={(price) => {
+            addToCart({ ...priceInputArt, prezzoUnitario: price });
+            setPriceInputArt(null);
+          }}
+          onClose={() => setPriceInputArt(null)}
+        />
       )}
 
       {/* ── Edit item dialog ── */}
@@ -1113,6 +1095,196 @@ function CartPanel({ cart, totals, totalePagato, resto, modoPagamento, setModoPa
     </div>
   );
 }
+
+// ── MobileCompactCart ─────────────────────────────────────────────────────────
+
+function MobileCompactCart({
+  cart, totals, modoPagamento, setModoPagamento,
+  onUpdateQty, onClear, onSubmit, isPending, cartExpanded, onToggleExpand,
+}: {
+  cart: CartItem[];
+  totals: ReturnType<typeof calcTotals>;
+  modoPagamento: string;
+  setModoPagamento: (m: "contanti" | "elettronico") => void;
+  onUpdateQty: (idx: number, delta: number) => void;
+  onClear: () => void;
+  onSubmit: () => void;
+  isPending: boolean;
+  cartExpanded: boolean;
+  onToggleExpand: () => void;
+}) {
+  const lastTapRef = useRef<number>(0);
+
+  const handleDoubleTap = () => {
+    const now = Date.now();
+    if (now - lastTapRef.current < 350) onToggleExpand();
+    lastTapRef.current = now;
+  };
+
+  const visibleItems = cartExpanded ? cart : cart.slice(0, 2);
+
+  return (
+    <div className="h-full flex flex-col overflow-hidden">
+      {/* Header */}
+      <div className="px-2 py-1.5 border-b flex items-center justify-between shrink-0 bg-gray-50">
+        <span className="text-[10px] font-semibold text-gray-600 flex items-center gap-1">
+          <ShoppingCart className="w-3 h-3" />
+          {cart.length > 0 ? `${cart.reduce((s, i) => s + i.quantita, 0)} art.` : "Carrello"}
+        </span>
+        {cart.length > 0 && (
+          <button onClick={onClear} className="text-red-400 hover:text-red-600 transition-colors">
+            <Trash2 className="w-3 h-3" />
+          </button>
+        )}
+      </div>
+
+      {/* Items — doppio tap per espandere */}
+      <div
+        className="border-b overflow-y-auto shrink-0"
+        style={{ maxHeight: cartExpanded ? "45%" : 88 }}
+        onDoubleClick={onToggleExpand}
+        onTouchEnd={handleDoubleTap}
+      >
+        {cart.length === 0 ? (
+          <div className="px-2 py-4 text-[9px] text-gray-300 text-center leading-snug">
+            Tocca un articolo per aggiungerlo
+          </div>
+        ) : (
+          <div className="divide-y">
+            {visibleItems.map((item, idx) => (
+              <div key={idx} className="px-2 py-1.5 flex items-center gap-1">
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] font-medium text-gray-800 truncate leading-tight">{item.nome}</p>
+                  <p className="text-[9px] text-gray-400 font-mono">€{item.prezzoUnitario.toFixed(2)}×{item.quantita}</p>
+                </div>
+                <div className="flex items-center gap-0.5 shrink-0">
+                  <button
+                    onClick={() => onUpdateQty(idx, -1)}
+                    className="w-5 h-5 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center"
+                  >
+                    <Minus className="w-2.5 h-2.5" />
+                  </button>
+                  <button
+                    onClick={() => onUpdateQty(idx, 1)}
+                    className="w-5 h-5 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center"
+                  >
+                    <Plus className="w-2.5 h-2.5" />
+                  </button>
+                </div>
+              </div>
+            ))}
+            {!cartExpanded && cart.length > 2 && (
+              <div className="px-2 py-1 text-[8px] text-gray-400 text-center bg-gray-50">
+                +{cart.length - 2} altri · doppio tap
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Totale */}
+      {cart.length > 0 && (
+        <div className="px-2 py-1.5 border-b shrink-0">
+          <div className="flex justify-between items-center">
+            <span className="text-[9px] text-gray-500 uppercase tracking-wide">Totale</span>
+            <span className="text-sm font-bold font-mono text-gray-900">€{formatCurrency(totals.complessivo)}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Pagamento + Emetti */}
+      <div className="px-2 py-2 space-y-1.5 shrink-0 mt-auto">
+        <div className="grid grid-cols-2 gap-1">
+          <button
+            onClick={() => setModoPagamento("contanti")}
+            className={`h-9 rounded-lg text-[9px] font-bold transition-all active:scale-95 ${modoPagamento === "contanti" ? "bg-[#1e3a5f] text-white shadow" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
+          >
+            💵 Cont.
+          </button>
+          <button
+            onClick={() => setModoPagamento("elettronico")}
+            className={`h-9 rounded-lg text-[9px] font-bold transition-all active:scale-95 ${modoPagamento === "elettronico" ? "bg-[#1e3a5f] text-white shadow" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
+          >
+            💳 Carta
+          </button>
+        </div>
+        <button
+          onClick={onSubmit}
+          disabled={isPending || cart.length === 0}
+          className="w-full bg-green-600 hover:bg-green-700 disabled:opacity-40 text-white font-bold py-3 rounded-xl text-[11px] flex items-center justify-center gap-1 active:scale-95 transition-all shadow-md"
+        >
+          {isPending ? "..." : <><Send className="w-3 h-3" />Emetti</>}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── PriceNumpadDialog ─────────────────────────────────────────────────────────
+
+function PriceNumpadDialog({ art, text, onTextChange, onConfirm, onClose }: {
+  art: Articolo;
+  text: string;
+  onTextChange: (t: string) => void;
+  onConfirm: (price: number) => void;
+  onClose: () => void;
+}) {
+  const amount = Number(text.replace(",", "."));
+
+  const appendKey = (key: string) => {
+    onTextChange((() => {
+      if (key === "⌫") return text.length > 1 ? text.slice(0, -1) : "0";
+      if (key === ",") return text.includes(",") ? text : (text === "0" ? "0," : text + ",");
+      if (text.includes(",") && text.split(",")[1]!.length >= 2) return text;
+      if (text === "0" && key !== ",") return key;
+      return text + key;
+    })());
+  };
+
+  const keys = ["7", "8", "9", "4", "5", "6", "1", "2", "3", ",", "0", "⌫"];
+
+  return (
+    <Dialog open={true} onOpenChange={open => !open && onClose()}>
+      <DialogContent className="w-[calc(100%-2rem)] max-w-xs rounded-2xl p-0 overflow-hidden">
+        <DialogHeader className="px-4 pt-4 pb-2 border-b">
+          <DialogTitle className="text-sm font-semibold truncate">{art.nome}</DialogTitle>
+          <p className="text-xs text-muted-foreground">Prezzo non impostato — inserisci il valore</p>
+        </DialogHeader>
+        <div className="px-4 py-3 space-y-3">
+          <div className="bg-gray-50 border rounded-xl px-4 py-3 text-right text-3xl font-mono font-bold text-gray-900 tracking-tight">
+            € {text || "0"}
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            {keys.map(k => (
+              <button
+                key={k}
+                onClick={() => appendKey(k)}
+                className={`h-14 rounded-xl text-xl font-bold transition-all active:scale-95 ${
+                  k === "⌫"
+                    ? "bg-red-50 text-red-500 hover:bg-red-100"
+                    : k === ","
+                      ? "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                      : "bg-gray-100 text-gray-800 hover:bg-gray-200"
+                }`}
+              >
+                {k}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={() => { if (amount > 0) onConfirm(amount); }}
+            disabled={amount <= 0}
+            className="w-full bg-[#1e3a5f] disabled:opacity-40 text-white font-bold py-4 rounded-xl text-base active:scale-95 transition-all shadow"
+          >
+            Aggiungi al carrello — € {amount > 0 ? amount.toFixed(2) : "0,00"}
+          </button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── FreeAmountKeyboard ────────────────────────────────────────────────────────
 
 function FreeAmountKeyboard({
   amountText,

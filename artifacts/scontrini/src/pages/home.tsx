@@ -172,6 +172,7 @@ export default function HomePage() {
   const [editIdx, setEditIdx] = useState<number | null>(null); // item being edited
   // Long-press su riga carrello → cambia prezzo
   const [changePriceIdx, setChangePriceIdx] = useState<number | null>(null);
+  const [cartActionIdx, setCartActionIdx] = useState<number | null>(null); // mini-menu long press
   const [changePriceText, setChangePriceText] = useState("0");
   // Long-press sul totale → sconto
   const [showDiscountDialog, setShowDiscountDialog] = useState(false);
@@ -761,7 +762,7 @@ export default function HomePage() {
         </div>
 
         {/* ── RIGHT: CART PANEL (mobile compact, collassabile) ── */}
-        <div className={`flex md:hidden flex-col bg-white border-l shrink-0 transition-all duration-200 ${cartSidebarOpen ? "w-32" : "w-10"}`}>
+        <div className={`flex md:hidden flex-col bg-white border-l shrink-0 transition-all duration-200 ${cartSidebarOpen ? "w-24" : "w-10"}`}>
           {cartSidebarOpen ? (
             <MobileCompactCart
               cart={cart}
@@ -771,16 +772,12 @@ export default function HomePage() {
               cartDiscount={cartDiscount}
               modoPagamento={modoPagamento}
               setModoPagamento={selectPaymentMode}
-              onUpdateQty={updateQty}
               onClear={clearCart}
               onSubmit={handleSubmit}
               isPending={inviaMutation.isPending}
               cartExpanded={cartExpanded}
               onToggleExpand={() => setCartExpanded(v => !v)}
-              onLongPressItem={(idx) => {
-                setChangePriceIdx(idx);
-                setChangePriceText(cart[idx].prezzoUnitario.toFixed(2).replace(".", ","));
-              }}
+              onLongPressItem={(idx) => setCartActionIdx(idx)}
               onLongPressTotal={() => setShowDiscountDialog(true)}
               onRemoveDiscount={() => setCartDiscount(null)}
               onCollapse={() => setCartSidebarOpen(false)}
@@ -868,6 +865,26 @@ export default function HomePage() {
           onTextChange={setChangePriceText}
           onConfirm={(price) => { updateItemPrice(changePriceIdx, price); setChangePriceIdx(null); }}
           onClose={() => setChangePriceIdx(null)}
+        />
+      )}
+
+      {/* ── Azioni riga carrello mobile (long press) ── */}
+      {cartActionIdx !== null && cart[cartActionIdx] && (
+        <CartItemActionSheet
+          item={cart[cartActionIdx]}
+          onIncrQty={() => { updateQty(cartActionIdx, 1); setCartActionIdx(null); }}
+          onDecrQty={() => { updateQty(cartActionIdx, -1); setCartActionIdx(null); }}
+          onModifyPrice={() => {
+            const idx = cartActionIdx;
+            setCartActionIdx(null);
+            setChangePriceText(cart[idx].prezzoUnitario.toFixed(2).replace(".", ","));
+            setChangePriceIdx(idx);
+          }}
+          onToggleOmaggio={() => {
+            updateItem(cartActionIdx, { omaggio: !cart[cartActionIdx].omaggio });
+            setCartActionIdx(null);
+          }}
+          onClose={() => setCartActionIdx(null)}
         />
       )}
 
@@ -1197,12 +1214,77 @@ function CartPanel({ cart, totals, totalePagato, resto, modoPagamento, setModoPa
   );
 }
 
+// ── CartItemActionSheet ───────────────────────────────────────────────────────
+// Mini-menu che compare su long press di una riga del carrello mobile.
+// Offre: + qty, - qty, modifica prezzo, toggle omaggio.
+
+function CartItemActionSheet({
+  item, onIncrQty, onDecrQty, onModifyPrice, onToggleOmaggio, onClose,
+}: {
+  item: CartItem;
+  onIncrQty: () => void;
+  onDecrQty: () => void;
+  onModifyPrice: () => void;
+  onToggleOmaggio: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <Dialog open={true} onOpenChange={open => !open && onClose()}>
+      <DialogContent className="w-[calc(100%-2rem)] max-w-xs rounded-2xl p-0 overflow-hidden">
+        <DialogHeader className="px-4 pt-4 pb-3 border-b bg-gray-50">
+          <DialogTitle className="text-sm font-semibold truncate">{item.nome}</DialogTitle>
+          <p className="text-xs text-muted-foreground">€{item.prezzoUnitario.toFixed(2)} · qtà {item.quantita}</p>
+        </DialogHeader>
+        <div className="grid grid-cols-2 gap-3 p-4">
+          {/* + e - quantità */}
+          <button
+            onClick={onDecrQty}
+            className="flex flex-col items-center justify-center gap-1.5 h-20 rounded-2xl bg-gray-100 hover:bg-gray-200 active:scale-95 transition-all"
+          >
+            <Minus className="w-6 h-6 text-gray-700" />
+            <span className="text-xs font-semibold text-gray-600">Togli 1</span>
+          </button>
+          <button
+            onClick={onIncrQty}
+            className="flex flex-col items-center justify-center gap-1.5 h-20 rounded-2xl bg-[#1e3a5f] hover:bg-[#162d4a] active:scale-95 transition-all"
+          >
+            <Plus className="w-6 h-6 text-white" />
+            <span className="text-xs font-semibold text-white">Aggiungi 1</span>
+          </button>
+          {/* modifica prezzo */}
+          <button
+            onClick={onModifyPrice}
+            className="flex flex-col items-center justify-center gap-1.5 h-20 rounded-2xl bg-blue-50 hover:bg-blue-100 active:scale-95 transition-all"
+          >
+            <Pencil className="w-5 h-5 text-blue-700" />
+            <span className="text-xs font-semibold text-blue-700">Modifica prezzo</span>
+          </button>
+          {/* omaggio */}
+          <button
+            onClick={onToggleOmaggio}
+            className={`flex flex-col items-center justify-center gap-1.5 h-20 rounded-2xl active:scale-95 transition-all ${
+              item.omaggio
+                ? "bg-amber-100 hover:bg-amber-200"
+                : "bg-gray-100 hover:bg-gray-200"
+            }`}
+          >
+            <span className="text-2xl">{item.omaggio ? "🎁" : "🎁"}</span>
+            <span className={`text-xs font-semibold ${item.omaggio ? "text-amber-700" : "text-gray-600"}`}>
+              {item.omaggio ? "Rimuovi omaggio" : "Omaggio"}
+            </span>
+          </button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ── MobileCompactCart ─────────────────────────────────────────────────────────
 
 function MobileCompactCart({
   cart, totals, totaleConSconto, discountAmount, cartDiscount,
   modoPagamento, setModoPagamento,
-  onUpdateQty, onClear, onSubmit, isPending, cartExpanded, onToggleExpand,
+  onClear, onSubmit, isPending, cartExpanded, onToggleExpand,
   onLongPressItem, onLongPressTotal, onRemoveDiscount, onCollapse,
 }: {
   cart: CartItem[];
@@ -1212,7 +1294,6 @@ function MobileCompactCart({
   cartDiscount: { type: "percent" | "value"; amount: number } | null;
   modoPagamento: string;
   setModoPagamento: (m: "contanti" | "elettronico") => void;
-  onUpdateQty: (idx: number, delta: number) => void;
   onClear: () => void;
   onSubmit: () => void;
   isPending: boolean;
@@ -1283,7 +1364,7 @@ function MobileCompactCart({
             {visibleItems.map((item, idx) => (
               <div
                 key={idx}
-                className="px-1.5 py-1 flex items-center gap-0.5 select-none"
+                className="px-1.5 py-1.5 flex items-center select-none active:bg-blue-50 transition-colors"
                 style={{ touchAction: "none" }}
                 onPointerDown={() => startItemLongPress(idx)}
                 onPointerUp={cancelItemLongPress}
@@ -1292,26 +1373,15 @@ function MobileCompactCart({
                 onContextMenu={(e) => { e.preventDefault(); onLongPressItem(idx); }}
               >
                 <div className="flex-1 min-w-0">
-                  <p className="text-[9px] font-medium text-gray-800 truncate leading-tight">{item.nome}</p>
-                  <p className="text-[8px] text-gray-400 font-mono">€{item.prezzoUnitario.toFixed(2)}×{item.quantita}</p>
+                  <p className="text-[10px] font-semibold text-gray-800 truncate leading-tight">
+                    {item.omaggio && <span className="text-amber-500 mr-0.5">🎁</span>}
+                    {item.nome}
+                  </p>
+                  <p className="text-[9px] text-gray-400 font-mono">€{item.prezzoUnitario.toFixed(2)} ×{item.quantita}</p>
                 </div>
-                <div className="flex flex-col items-center gap-0 shrink-0">
-                  <button
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onClick={(e) => { e.stopPropagation(); cancelItemLongPress(); onUpdateQty(idx, 1); }}
-                    className="w-4 h-4 flex items-center justify-center text-gray-500 hover:text-gray-800"
-                  >
-                    <Plus className="w-2.5 h-2.5" />
-                  </button>
-                  <span className="text-[8px] font-bold text-gray-700 leading-none">{item.quantita}</span>
-                  <button
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onClick={(e) => { e.stopPropagation(); cancelItemLongPress(); onUpdateQty(idx, -1); }}
-                    className="w-4 h-4 flex items-center justify-center text-gray-500 hover:text-gray-800"
-                  >
-                    <Minus className="w-2.5 h-2.5" />
-                  </button>
-                </div>
+                <span className="text-[9px] font-bold text-[#1e3a5f] font-mono ml-1 shrink-0">
+                  ×{item.quantita}
+                </span>
               </div>
             ))}
             {!cartExpanded && cart.length > 2 && (

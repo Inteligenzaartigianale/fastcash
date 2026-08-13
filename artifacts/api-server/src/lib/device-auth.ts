@@ -1,8 +1,12 @@
 /**
  * Device / app token store + Express middleware.
  *
- * All tokens — desktop "app tokens" and mobile "device tokens" — live here.
- * They are opaque UUIDs; validity is checked server-side.
+ * Tokens are persisted in PostgreSQL (table: device_tokens) so that
+ * server restarts and production deploys do NOT invalidate mobile sessions.
+ * Mobile devices stay paired without re-scanning the QR code.
+ *
+ * The in-memory Map is authoritative during the process lifetime;
+ * the DB is written fire-and-forget on every change (non-fatal on failure).
  *
  * Lifecycle:
  *   - Desktop: token issued via GET /auth/app-token (ADE session required)
@@ -14,41 +18,124 @@
  */
 
 import { randomUUID } from "node:crypto";
+import pg from "pg";
 import type { Request, Response, NextFunction } from "express";
 import { isSessionValid } from "./session.js";
+
+const { Pool } = pg;
 
 type TokenType = "desktop" | "mobile";
 
 interface TokenEntry {
   type: TokenType;
   createdAt: Date;
+  expiresAt: Date;
 }
+
+// ── DB pool ────────────────────────────────────────────────────────────────────
+
+const pool = new Pool({
+  connectionString: process.env["DATABASE_URL"],
+  max: 3,
+  idleTimeoutMillis: 30_000,
+  connectionTimeoutMillis: 10_000,
+  ssl: process.env["NODE_ENV"] === "production" ? { rejectUnauthorized: false } : false,
+});
+
+// ── TTL ────────────────────────────────────────────────────────────────────────
+
+const TOKEN_TTL_MS: Record<TokenType, number> = {
+  mobile:  30 * 24 * 60 * 60 * 1000, // 30 giorni
+  desktop:  1 * 24 * 60 * 60 * 1000, // 1 giorno
+};
+
+// ── Ensure table exists ────────────────────────────────────────────────────────
+
+pool.query(`
+  CREATE TABLE IF NOT EXISTS device_tokens (
+    token      TEXT PRIMARY KEY,
+    type       TEXT NOT NULL DEFAULT 'mobile',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at TIMESTAMPTZ NOT NULL
+  )
+`).catch((err: unknown) => {
+  console.error("[device-auth] Could not ensure device_tokens table:", err);
+});
+
+// ── In-memory cache ────────────────────────────────────────────────────────────
 
 const tokens = new Map<string, TokenEntry>();
 
-// ── Token management ─────────────────────────────────────────────────────────
+// ── Bootstrap: load valid tokens from DB on startup ───────────────────────────
+
+pool.query<{ token: string; type: string; created_at: string; expires_at: string }>(
+  "SELECT token, type, created_at, expires_at FROM device_tokens WHERE expires_at > NOW()"
+).then((result) => {
+  for (const r of result.rows) {
+    tokens.set(r.token, {
+      type:      r.type as TokenType,
+      createdAt: new Date(r.created_at),
+      expiresAt: new Date(r.expires_at),
+    });
+  }
+  // Pulizia dei token scaduti (best-effort)
+  pool.query("DELETE FROM device_tokens WHERE expires_at <= NOW()").catch(() => {});
+  console.log(`[device-auth] Restored ${result.rows.length} device token(s) from DB`);
+}).catch((err: unknown) => {
+  console.error("[device-auth] Could not load tokens from DB:", err);
+});
+
+// ── Token management ──────────────────────────────────────────────────────────
 
 export function issueToken(type: TokenType): string {
   const token = randomUUID();
-  tokens.set(token, { type, createdAt: new Date() });
+  const createdAt = new Date();
+  const expiresAt = new Date(createdAt.getTime() + TOKEN_TTL_MS[type]);
+
+  tokens.set(token, { type, createdAt, expiresAt });
+
+  // Fire-and-forget persist
+  pool.query(
+    `INSERT INTO device_tokens (token, type, created_at, expires_at)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (token) DO NOTHING`,
+    [token, type, createdAt, expiresAt]
+  ).catch((err: unknown) => {
+    console.error("[device-auth] Failed to persist token to DB:", err);
+  });
+
   return token;
 }
 
 export function isValidToken(token: string): boolean {
-  return tokens.has(token);
+  const entry = tokens.get(token);
+  if (!entry) return false;
+  if (entry.expiresAt < new Date()) {
+    // Scaduto: rimuovi
+    tokens.delete(token);
+    pool.query("DELETE FROM device_tokens WHERE token = $1", [token]).catch(() => {});
+    return false;
+  }
+  return true;
 }
 
-/** Called on logout or ADE session expiry to invalidate all issued tokens. */
+/** Revoca tutti i token (logout globale o scadenza sessione ADE). */
 export function clearAllTokens(): void {
   tokens.clear();
+  pool.query("DELETE FROM device_tokens").catch((err: unknown) => {
+    console.error("[device-auth] Failed to clear all tokens from DB:", err);
+  });
 }
 
 /**
- * Removes only one specific device token (mobile self-logout).
- * Does NOT clear the ADE session — other devices stay connected.
+ * Rimuove solo un token specifico (logout mobile self-service).
+ * Non tocca la sessione ADE — gli altri dispositivi rimangono connessi.
  */
 export function clearToken(token: string): void {
   tokens.delete(token);
+  pool.query("DELETE FROM device_tokens WHERE token = $1", [token]).catch((err: unknown) => {
+    console.error("[device-auth] Failed to delete token from DB:", err);
+  });
 }
 
 // ── Middleware ────────────────────────────────────────────────────────────────

@@ -158,8 +158,13 @@ export default function HomePage() {
   // Navigation
   const [repartoId, setRepartoId] = useState<string | null>(null);
 
-  // Cart
-  const [cart, setCart] = useState<CartItem[]>([]);
+  // Cart — persisted in sessionStorage so la navigazione tra tab non azzera il carrello
+  const [cart, setCart] = useState<CartItem[]>(() => {
+    try { return JSON.parse(sessionStorage.getItem("scontrini_cart") ?? "[]"); } catch { return []; }
+  });
+  useEffect(() => {
+    try { sessionStorage.setItem("scontrini_cart", JSON.stringify(cart)); } catch { /* storage pieno */ }
+  }, [cart]);
   const [cartExpanded, setCartExpanded] = useState(false);
   const [priceInputArt, setPriceInputArt] = useState<Articolo | null>(null);
   const [priceInputText, setPriceInputText] = useState("0");

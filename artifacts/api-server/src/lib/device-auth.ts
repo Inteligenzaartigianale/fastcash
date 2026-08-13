@@ -43,6 +43,14 @@ export function clearAllTokens(): void {
   tokens.clear();
 }
 
+/**
+ * Removes only one specific device token (mobile self-logout).
+ * Does NOT clear the ADE session — other devices stay connected.
+ */
+export function clearToken(token: string): void {
+  tokens.delete(token);
+}
+
 // ── Middleware ────────────────────────────────────────────────────────────────
 
 /**

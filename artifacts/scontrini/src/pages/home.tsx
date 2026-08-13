@@ -17,7 +17,7 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { LogOut, ShoppingCart, Trash2, Plus, Minus, Pencil, Send, ChevronLeft, X, Delete, Calculator, ReceiptText, History, RefreshCw, CheckCircle2, XCircle, FileText, Tag, Percent } from "lucide-react";
 import { QrShareButton } from "@/components/qr-display";
-import { isCapacitor } from "@/lib/capacitor";
+import { isCapacitor, getApiBase, getDeviceToken, clearDeviceToken } from "@/lib/capacitor";
 import { BottomNav } from "@/components/bottom-nav";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -611,7 +611,27 @@ export default function HomePage() {
             </Select>
           )}
           {!isCapacitor && <QrShareButton />}
-          <Button variant="ghost" size="sm" className="text-white/70 hover:text-white hover:bg-white/10 h-8 w-8 p-0" onClick={() => logoutMutation.mutate(undefined, { onSettled: () => setLocation('/login') })}>
+          <Button
+            variant="ghost" size="sm"
+            className="text-white/70 hover:text-white hover:bg-white/10 h-8 w-8 p-0"
+            onClick={() => {
+              if (isCapacitor) {
+                // Mobile: revoca solo questo device token, NON la sessione ADE
+                // (che è condivisa col desktop — non deve essere distrutta dal mobile)
+                const base = getApiBase();
+                const token = getDeviceToken();
+                fetch(`${base}/api/auth/device-logout`, {
+                  method: "POST",
+                  headers: token ? { Authorization: `Bearer ${token}` } : {},
+                }).catch(() => {/* ignore network errors */}).finally(() => {
+                  clearDeviceToken();
+                  setLocation("/login");
+                });
+              } else {
+                logoutMutation.mutate(undefined, { onSettled: () => setLocation('/login') });
+              }
+            }}
+          >
             <LogOut className="w-4 h-4" />
           </Button>
         </div>

@@ -11,7 +11,7 @@ import { LoginBody, LoginResponse, GetAuthStatusResponse } from "@workspace/api-
 import { logger } from "../lib/logger.js";
 import { fetchMeAndUpdateSession } from "./ae.js";
 import { randomUUID, randomInt } from "node:crypto";
-import { issueToken, clearAllTokens } from "../lib/device-auth.js";
+import { issueToken, clearAllTokens, clearToken } from "../lib/device-auth.js";
 
 const router: IRouter = Router();
 
@@ -274,6 +274,19 @@ router.post("/auth/logout", async (req, res): Promise<void> => {
   clearSession();
   clearAllTokens(); // invalidate all issued desktop/mobile tokens
   req.log.info("Session cleared — all device tokens revoked");
+  res.json({ success: true });
+});
+
+// POST /auth/device-logout — mobile-only self-logout.
+// Removes ONLY the calling device's token; leaves the ADE session intact
+// so other devices and the desktop remain connected.
+router.post("/auth/device-logout", (req, res): void => {
+  const authHeader = req.headers.authorization;
+  if (authHeader?.startsWith("Bearer ")) {
+    const token = authHeader.slice(7).trim();
+    clearToken(token);
+    req.log.info({ token: token.slice(0, 8) + "…" }, "Device token self-revoked (device-logout)");
+  }
   res.json({ success: true });
 });
 

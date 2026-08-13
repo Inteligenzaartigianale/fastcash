@@ -3,7 +3,9 @@ import { Send, Loader2, Bot, User, ImagePlus, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { BottomNav } from "@/components/bottom-nav";
 
-const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
+import { getApiBase } from "@/lib/capacitor";
+import { getAuthHeaders } from "@/lib/auth-token";
+const BASE = getApiBase();
 
 interface Message {
   role: "user" | "assistant";
@@ -127,7 +129,7 @@ export default function GuidaPage() {
     try {
       const res = await fetch(`${BASE}/api/chat`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         body: JSON.stringify({
           messages: newMessages.map((m) => ({ role: m.role, content: m.content })),
         }),

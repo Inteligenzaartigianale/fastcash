@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { useLocation } from "wouter";
-import { useGetAeStatus, useGetMe, useInviaDocumento, useLogout } from "@workspace/api-client-react";
+import { useGetAeStatus, useGetMe, useInviaDocumento, useLogout, getGetMeQueryKey, getGetAeStatusQueryKey } from "@workspace/api-client-react";
 import { useRequireAuth } from "@/hooks/use-require-auth";
 import { formatCurrency } from "@/lib/utils";
 import { SIZES } from "@/lib/articolo-size";
@@ -16,6 +16,8 @@ import {
 } from "@/lib/catalog";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { LogOut, ShoppingCart, Trash2, Plus, Minus, Pencil, Send, ChevronLeft, X, Delete, Calculator, ReceiptText, History, RefreshCw, CheckCircle2, XCircle, FileText } from "lucide-react";
+import { QrShareButton } from "@/components/qr-display";
+import { isCapacitor } from "@/lib/capacitor";
 import { BottomNav } from "@/components/bottom-nav";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -69,6 +71,7 @@ export default function HomePage() {
   const queryClient = useQueryClient();
   const meQuery = useGetMe({
     query: {
+      queryKey: getGetMeQueryKey(),
       enabled: !!isAuthenticated,
       retry: false,
       refetchInterval: 60_000,
@@ -77,6 +80,7 @@ export default function HomePage() {
   });
   const aeStatusQuery = useGetAeStatus({
     query: {
+      queryKey: getGetAeStatusQueryKey(),
       enabled: !!isAuthenticated,
       retry: false,
       refetchInterval: 60_000,
@@ -445,7 +449,7 @@ export default function HomePage() {
         }
       },
       onError: (err) => {
-        const msg = err.error || "Errore durante l'invio";
+        const msg = (err as unknown as { error?: string }).error || "Errore durante l'invio";
         const isAuth = msg.includes("401") || msg.includes("405") || msg.includes("sessione") || msg.includes("Unauthorized");
         toast({
           title: isAuth ? "Sessione scaduta" : "Errore invio",
@@ -567,6 +571,7 @@ export default function HomePage() {
               </SelectContent>
             </Select>
           )}
+          {!isCapacitor && <QrShareButton />}
           <Button variant="ghost" size="sm" className="text-white/70 hover:text-white hover:bg-white/10 h-8 w-8 p-0" onClick={() => logoutMutation.mutate(undefined, { onSettled: () => setLocation('/login') })}>
             <LogOut className="w-4 h-4" />
           </Button>

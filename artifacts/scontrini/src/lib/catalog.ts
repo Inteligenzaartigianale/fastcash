@@ -1,3 +1,6 @@
+import { getApiBase } from "./capacitor";
+import { getAuthHeaders } from "./auth-token";
+
 export type NaturaIva = "N1" | "N2" | "N3" | "N4" | "N5" | "N6";
 export type AliquotaIva = "22" | "10" | "5" | "4" | NaturaIva;
 
@@ -67,12 +70,14 @@ export interface Catalog {
   impostazioni?: Impostazioni;
 }
 
-const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
-
 async function api<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`${BASE}/api${path}`, {
+  const base = getApiBase();
+  const res = await fetch(`${base}/api${path}`, {
     method,
-    headers: body ? { "Content-Type": "application/json" } : undefined,
+    headers: {
+      ...getAuthHeaders(),
+      ...(body ? { "Content-Type": "application/json" } : {}),
+    },
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) throw new Error(`API ${method} ${path} failed: ${res.status}`);

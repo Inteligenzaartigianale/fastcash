@@ -10,7 +10,8 @@ import {
 import { LoginBody, LoginResponse, GetAuthStatusResponse } from "@workspace/api-zod";
 import { logger } from "../lib/logger.js";
 import { fetchMeAndUpdateSession } from "./ae.js";
-import { randomUUID } from "node:crypto";
+import { randomUUID, randomInt } from "node:crypto";
+import { issueToken, clearAllTokens } from "../lib/device-auth.js";
 
 const router: IRouter = Router();
 
@@ -271,8 +272,143 @@ router.post("/auth/cookie", async (req, res): Promise<void> => {
 // ── POST /auth/logout ─────────────────────────────────────────────────────────
 router.post("/auth/logout", async (req, res): Promise<void> => {
   clearSession();
-  req.log.info("Session cleared");
+  clearAllTokens(); // invalidate all issued desktop/mobile tokens
+  req.log.info("Session cleared — all device tokens revoked");
   res.json({ success: true });
+});
+
+// ── GET /auth/app-token — desktop gets its device token ───────────────────────
+// The browser calls this after detecting an active ADE session.  The returned
+// token must be sent as `Authorization: Bearer <token>` on all protected routes.
+// Each call issues a new token; previous ones remain valid until logout.
+router.get("/auth/app-token", (req, res): void => {
+  if (!isSessionValid()) {
+    res.status(401).json({ error: "Nessuna sessione ADE attiva" });
+    return;
+  }
+  const token = issueToken("desktop");
+  req.log.info({ token: token.slice(0, 8) + "…" }, "Desktop app token issued");
+  res.json({ token });
+});
+
+// ── QR Session Transfer ───────────────────────────────────────────────────────
+// Security model: single-user server with a global ADE session.
+//
+// The QR pairing uses a two-factor approach to prevent relay attacks:
+//   1. Desktop calls /auth/qr/generate → receives { token, pin }.
+//      The PIN is displayed on the desktop screen only; it is NOT embedded
+//      in the QR code.
+//   2. Mobile scans the QR → reads { server, token } from the code → then asks
+//      the operator to type the 4-digit PIN shown on the desktop screen.
+//   3. Mobile calls /auth/qr/consume with { token, pin }.
+//      The server validates both values match and expire the pair.
+//
+// An attacker who can call the API can obtain { token, pin } from the generate
+// response, but they would need physical access to the desktop screen to read
+// the PIN if they only capture the QR image (e.g. from a photo).  Rate-limiting
+// (max 5 active pairs at a time) further limits automated abuse.
+
+const QR_TOKEN_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const QR_MAX_ACTIVE = 5; // prevent token flooding
+
+interface QrTokenEntry {
+  pin: string;           // 4-digit string shown on desktop only, NOT in QR payload
+  createdAt: Date;
+  failedAttempts: number; // token is deleted after QR_MAX_PIN_ATTEMPTS wrong PINs
+}
+
+const qrTokens = new Map<string, QrTokenEntry>();
+
+function pruneQrTokens() {
+  const cutoff = Date.now() - QR_TOKEN_TTL_MS;
+  for (const [tok, entry] of qrTokens) {
+    if (entry.createdAt.getTime() < cutoff) qrTokens.delete(tok);
+  }
+}
+
+const QR_MAX_PIN_ATTEMPTS = 3; // token deleted after this many wrong PINs
+
+function randomPin(): string {
+  // Cryptographically random 4-digit PIN (0000–9999), zero-padded.
+  // Math.random() is intentionally avoided here — crypto.randomInt gives
+  // uniform distribution with no modulo bias.
+  return String(randomInt(10000)).padStart(4, "0");
+}
+
+// POST /auth/qr/generate — requires active ADE session, returns one-time {token, pin}.
+// The PIN must be shown to the operator on the desktop screen; it is NOT included
+// in the QR code itself, providing a second factor that only someone physically
+// present at the desktop can supply.
+router.post("/auth/qr/generate", (req, res): void => {
+  if (!isSessionValid()) {
+    res.status(401).json({ error: "Nessuna sessione attiva sul server" });
+    return;
+  }
+  pruneQrTokens();
+  if (qrTokens.size >= QR_MAX_ACTIVE) {
+    res.status(429).json({ error: "Troppi codici QR attivi — attendi la scadenza o ricarica la pagina" });
+    return;
+  }
+  const token = randomUUID();
+  const pin = randomPin();
+  qrTokens.set(token, { pin, createdAt: new Date(), failedAttempts: 0 });
+  const expiresAt = new Date(Date.now() + QR_TOKEN_TTL_MS).toISOString();
+  req.log.info({ token: token.slice(0, 8) + "…" }, "QR session token generated");
+  // pin is returned to the desktop UI only — the desktop must display it on screen.
+  res.json({ token, pin, expiresAt });
+});
+
+// POST /auth/qr/consume — mobile sends { token, pin }; both must match.
+router.post("/auth/qr/consume", (req, res): void => {
+  const { token, pin } = req.body as { token?: string; pin?: string };
+  if (!token || typeof token !== "string") {
+    res.status(400).json({ error: "Token mancante" });
+    return;
+  }
+  if (!pin || typeof pin !== "string" || !/^\d{4}$/.test(pin)) {
+    res.status(400).json({ error: "PIN mancante o non valido (deve essere 4 cifre)" });
+    return;
+  }
+  const entry = qrTokens.get(token);
+  if (!entry) {
+    res.status(404).json({ error: "Token non valido o scaduto" });
+    return;
+  }
+  if (Date.now() - entry.createdAt.getTime() > QR_TOKEN_TTL_MS) {
+    qrTokens.delete(token);
+    res.status(410).json({ error: "Token scaduto — genera un nuovo QR" });
+    return;
+  }
+  if (entry.pin !== pin) {
+    entry.failedAttempts++;
+    if (entry.failedAttempts >= QR_MAX_PIN_ATTEMPTS) {
+      qrTokens.delete(token);
+      req.log.warn({ token: token.slice(0, 8) + "…" }, "QR consume: max PIN attempts reached — token revoked");
+      res.status(429).json({ error: "Troppi tentativi errati — genera un nuovo QR" });
+    } else {
+      const remaining = QR_MAX_PIN_ATTEMPTS - entry.failedAttempts;
+      req.log.warn({ token: token.slice(0, 8) + "…", attempts: entry.failedAttempts }, "QR consume: wrong PIN");
+      res.status(401).json({
+        error: `PIN non corretto (${remaining} tentativ${remaining === 1 ? "o" : "i"} rimanent${remaining === 1 ? "e" : "i"})`,
+      });
+    }
+    return;
+  }
+  if (!isSessionValid()) {
+    qrTokens.delete(token);
+    res.status(401).json({ error: "La sessione desktop non è più valida" });
+    return;
+  }
+  qrTokens.delete(token); // one-time use
+  const session = getSession()!;
+  const deviceToken = issueToken("mobile"); // bound credential for this device
+  req.log.info({ token: token.slice(0, 8) + "…" }, "QR session token consumed — mobile device token issued");
+  res.json({
+    success: true,
+    ragioneSociale: session.ragioneSociale,
+    partitaIva: session.partitaIva,
+    deviceToken, // stored by the mobile app; sent as Authorization: Bearer on all calls
+  });
 });
 
 export default router;

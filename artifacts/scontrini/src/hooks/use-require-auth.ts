@@ -1,12 +1,13 @@
 import { useEffect } from "react";
 import { useLocation } from "wouter";
-import { useGetAuthStatus } from "@workspace/api-client-react";
+import { useGetAuthStatus, getGetAuthStatusQueryKey } from "@workspace/api-client-react";
 
 export function useRequireAuth() {
   const [location, setLocation] = useLocation();
   const { data, isLoading } = useGetAuthStatus({ 
     query: {
-      retry: false
+      queryKey: getGetAuthStatusQueryKey(),
+      retry: false,
     } 
   });
 

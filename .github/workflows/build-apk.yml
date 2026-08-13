@@ -1,0 +1,126 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Build type'
+        required: true
+        default: 'debug'
+        type: choice
+        options:
+          - debug
+          - release
+  push:
+    branches:
+      - main
+    paths:
+      - 'artifacts/scontrini/**'
+      - 'lib/**'
+      - '.github/workflows/build-apk.yml'
+
+jobs:
+  build-apk:
+    name: Build APK
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── Checkout ──────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── Node.js + pnpm ────────────────────────────────────────────────────
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: '10'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # ── Build web app for Android (base path = /) ─────────────────────────
+      - name: Build web app
+        working-directory: artifacts/scontrini
+        env:
+          BASE_PATH: /
+          PORT: 3000
+          NODE_ENV: production
+        run: pnpm vite build --config vite.config.ts
+
+      # ── Java 17 ───────────────────────────────────────────────────────────
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      # ── Android SDK ───────────────────────────────────────────────────────
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Accept Android SDK licenses
+        run: yes | sdkmanager --licenses || true
+
+      # ── Capacitor ─────────────────────────────────────────────────────────
+      - name: Install Capacitor CLI
+        working-directory: artifacts/scontrini
+        run: pnpm add -D @capacitor/cli @capacitor/android --ignore-scripts
+
+      - name: Add Android platform (if not present)
+        working-directory: artifacts/scontrini
+        run: |
+          if [ ! -d "android" ]; then
+            npx cap add android
+          else
+            echo "Android platform already exists, skipping add"
+          fi
+
+      # Declare CAMERA permission so html5-qrcode can request camera access
+      # inside the Capacitor WebView on Android.
+      - name: Add CAMERA permission to AndroidManifest.xml
+        working-directory: artifacts/scontrini
+        run: |
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          if ! grep -q "android.permission.CAMERA" "$MANIFEST"; then
+            sed -i 's|<uses-permission android:name="android.permission.INTERNET" />|<uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.CAMERA" />\n    <uses-feature android:name="android.hardware.camera" android:required="false" />|' "$MANIFEST"
+            echo "CAMERA permission added to $MANIFEST"
+          else
+            echo "CAMERA permission already present — skipping"
+          fi
+
+      - name: Sync Capacitor
+        working-directory: artifacts/scontrini
+        run: npx cap sync android
+
+      # ── Build APK ─────────────────────────────────────────────────────────
+      - name: Build debug APK
+        if: ${{ github.event.inputs.build_type != 'release' }}
+        working-directory: artifacts/scontrini/android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Build release APK (unsigned)
+        if: ${{ github.event.inputs.build_type == 'release' }}
+        working-directory: artifacts/scontrini/android
+        run: ./gradlew assembleRelease --no-daemon
+
+      # ── Upload APK ────────────────────────────────────────────────────────
+      - name: Upload debug APK
+        if: ${{ github.event.inputs.build_type != 'release' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: scontrini-fiscali-debug
+          path: artifacts/scontrini/android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 14
+
+      - name: Upload release APK
+        if: ${{ github.event.inputs.build_type == 'release' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: scontrini-fiscali-release
+          path: artifacts/scontrini/android/app/build/outputs/apk/release/app-release-unsigned.apk
+          retention-days: 30

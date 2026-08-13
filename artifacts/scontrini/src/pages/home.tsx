@@ -15,7 +15,7 @@ import {
   normalizeAliquotaIva,
 } from "@/lib/catalog";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { LogOut, ShoppingCart, Trash2, Plus, Minus, Pencil, Send, ChevronLeft, X, Delete, Calculator, ReceiptText, History, RefreshCw, CheckCircle2, XCircle, FileText } from "lucide-react";
+import { LogOut, ShoppingCart, Trash2, Plus, Minus, Pencil, Send, ChevronLeft, X, Delete, Calculator, ReceiptText, History, RefreshCw, CheckCircle2, XCircle, FileText, Tag, Percent } from "lucide-react";
 import { QrShareButton } from "@/components/qr-display";
 import { isCapacitor } from "@/lib/capacitor";
 import { BottomNav } from "@/components/bottom-nav";
@@ -169,6 +169,12 @@ export default function HomePage() {
   const [priceInputArt, setPriceInputArt] = useState<Articolo | null>(null);
   const [priceInputText, setPriceInputText] = useState("0");
   const [editIdx, setEditIdx] = useState<number | null>(null); // item being edited
+  // Long-press su riga carrello → cambia prezzo
+  const [changePriceIdx, setChangePriceIdx] = useState<number | null>(null);
+  const [changePriceText, setChangePriceText] = useState("0");
+  // Long-press sul totale → sconto
+  const [showDiscountDialog, setShowDiscountDialog] = useState(false);
+  const [cartDiscount, setCartDiscount] = useState<{ type: "percent" | "value"; amount: number } | null>(null);
   const [showFreeAmount, setShowFreeAmount] = useState(false);
   const [fixedAmountText, setFixedAmountText] = useState("");
 
@@ -206,14 +212,22 @@ export default function HomePage() {
   }, [cat.articoli, repartoId]);
 
   const totals = useMemo(() => calcTotals(cart), [cart]);
+  const discountAmount = useMemo(() => {
+    if (!cartDiscount || totals.complessivo <= 0) return 0;
+    const raw = cartDiscount.type === "percent"
+      ? totals.complessivo * cartDiscount.amount / 100
+      : cartDiscount.amount;
+    return Math.round(Math.min(raw, totals.complessivo) * 100) / 100;
+  }, [cartDiscount, totals.complessivo]);
+  const totaleConSconto = totals.complessivo - discountAmount;
 
-  // Auto-fill payment amount when total changes
+  // Auto-fill payment amount when total (after discount) changes
   useEffect(() => {
-    if (modoPagamento === "elettronico") setImportoElettronico(totals.complessivo);
+    if (modoPagamento === "elettronico") setImportoElettronico(totaleConSconto);
     if (modoPagamento === "contanti" && (!gestioneResto || importoContanti === 0)) {
-      setImportoContanti(totals.complessivo);
+      setImportoContanti(totaleConSconto);
     }
-  }, [gestioneResto, totals.complessivo, modoPagamento]);
+  }, [gestioneResto, totaleConSconto, modoPagamento]);
 
   useEffect(() => {
     if (modoPagamento === "ticket" && !cat.impostazioni?.mostraTicket) {
@@ -250,12 +264,12 @@ export default function HomePage() {
   }, [tipoOp]);
 
   const totalePagato = modoPagamento === "contanti"
-    ? (gestioneResto ? importoContanti : totals.complessivo)
+    ? (gestioneResto ? importoContanti : totaleConSconto)
     : modoPagamento === "elettronico"
       ? importoElettronic
       : importoTicket;
   const resto = gestioneResto && modoPagamento === "contanti"
-    ? Math.max(0, importoContanti - totals.complessivo)
+    ? Math.max(0, importoContanti - totaleConSconto)
     : 0;
 
   const selectPaymentMode = useCallback((mode: "contanti" | "elettronico" | "ticket") => {
@@ -376,12 +390,17 @@ export default function HomePage() {
     setCart(prev => prev.map((item, i) => i === idx ? { ...item, ...patch } : item));
   };
 
+  const updateItemPrice = (idx: number, newPrice: number) => {
+    setCart(prev => prev.map((item, i) => i === idx ? { ...item, prezzoUnitario: newPrice } : item));
+  };
+
   const clearCart = () => {
     setCart([]);
     setImportoContanti(0);
     setImportoElettronico(0);
     setImportoTicket(0);
     setNTicket("");
+    setCartDiscount(null);
     setShowCart(false);
   };
 
@@ -412,14 +431,14 @@ export default function HomePage() {
     // Blocca solo se l'incassato è insufficiente (mancano soldi).
     const pagamentoInsufficient =
       gestioneResto && modoPagamento === "contanti"
-        ? importoContanti < totals.complessivo - 0.01
-        : Math.abs(totals.complessivo - totalePagato) > 0.01;
+        ? importoContanti < totaleConSconto - 0.01
+        : Math.abs(totaleConSconto - totalePagato) > 0.01;
     if (pagamentoInsufficient) {
-      toast({ title: "Pagamento non quadra", description: `Mancano € ${formatCurrency(totals.complessivo - totalePagato)}`, variant: "destructive" });
+      toast({ title: "Pagamento non quadra", description: `Mancano € ${formatCurrency(totaleConSconto - totalePagato)}`, variant: "destructive" });
       return;
     }
     const maxDco = cat.impostazioni?.importoMassimoDco;
-    if (maxDco != null && totals.complessivo > maxDco + 0.005) {
+    if (maxDco != null && totaleConSconto > maxDco + 0.005) {
       toast({
         title: "Importo DCO oltre soglia",
         description: `Il limite configurato è € ${formatCurrency(maxDco)}.`,
@@ -432,18 +451,23 @@ export default function HomePage() {
       data: {
         tipoOperazione: tipoOp,
         codiceLotteria: lotteria || undefined,
-        righe: cart.map(i => ({
-          articoloId: i.articoloId,
-          quantita: i.quantita,
-          descrizione: i.nome,
-          prezzoUnitario: i.prezzoUnitario,
-          aliquotaIva: i.aliquotaIva,
-          sconto: i.sconto || 0,
-          omaggio: i.omaggio,
-        })),
+        righe: cart.map(i => {
+          // Distribuisce lo sconto globale proporzionalmente sul valore di ogni riga
+          const share = totals.complessivo > 0 ? itemTotale(i) / totals.complessivo : 0;
+          const itemDiscountShare = discountAmount > 0 ? Math.round(discountAmount * share * 100) / 100 : 0;
+          return {
+            articoloId: i.articoloId,
+            quantita: i.quantita,
+            descrizione: i.nome,
+            prezzoUnitario: i.prezzoUnitario,
+            aliquotaIva: i.aliquotaIva,
+            sconto: (i.sconto || 0) + itemDiscountShare,
+            omaggio: i.omaggio,
+          };
+        }),
         pagamento: {
           contanti: modoPagamento === "contanti"
-            ? (gestioneResto ? importoContanti : totals.complessivo)
+            ? (gestioneResto ? importoContanti : totaleConSconto)
             : 0,
           elettronico: modoPagamento === "elettronico" ? importoElettronic : 0,
           ticketRestaurant: modoPagamento === "ticket" ? importoTicket : 0,
@@ -717,10 +741,13 @@ export default function HomePage() {
         </div>
 
         {/* ── RIGHT: CART PANEL (mobile compact, always visible) ── */}
-        <div className="flex md:hidden w-40 flex-col bg-white border-l shrink-0">
+        <div className="flex md:hidden w-32 flex-col bg-white border-l shrink-0">
           <MobileCompactCart
             cart={cart}
             totals={totals}
+            totaleConSconto={totaleConSconto}
+            discountAmount={discountAmount}
+            cartDiscount={cartDiscount}
             modoPagamento={modoPagamento}
             setModoPagamento={selectPaymentMode}
             onUpdateQty={updateQty}
@@ -729,6 +756,12 @@ export default function HomePage() {
             isPending={inviaMutation.isPending}
             cartExpanded={cartExpanded}
             onToggleExpand={() => setCartExpanded(v => !v)}
+            onLongPressItem={(idx) => {
+              setChangePriceIdx(idx);
+              setChangePriceText(cart[idx].prezzoUnitario.toFixed(2).replace(".", ","));
+            }}
+            onLongPressTotal={() => setShowDiscountDialog(true)}
+            onRemoveDiscount={() => setCartDiscount(null)}
           />
         </div>
 
@@ -781,6 +814,26 @@ export default function HomePage() {
             setPriceInputArt(null);
           }}
           onClose={() => setPriceInputArt(null)}
+        />
+      )}
+
+      {/* ── Cambia prezzo riga carrello (long press) ── */}
+      {changePriceIdx !== null && cart[changePriceIdx] && (
+        <ChangePriceDialog
+          item={cart[changePriceIdx]}
+          text={changePriceText}
+          onTextChange={setChangePriceText}
+          onConfirm={(price) => { updateItemPrice(changePriceIdx, price); setChangePriceIdx(null); }}
+          onClose={() => setChangePriceIdx(null)}
+        />
+      )}
+
+      {/* ── Sconto sul totale (long press totale) ── */}
+      {showDiscountDialog && (
+        <DiscountDialog
+          total={totals.complessivo}
+          onApply={(type, amount) => { setCartDiscount({ type, amount }); setShowDiscountDialog(false); }}
+          onClose={() => setShowDiscountDialog(false)}
         />
       )}
 
@@ -1104,11 +1157,16 @@ function CartPanel({ cart, totals, totalePagato, resto, modoPagamento, setModoPa
 // ── MobileCompactCart ─────────────────────────────────────────────────────────
 
 function MobileCompactCart({
-  cart, totals, modoPagamento, setModoPagamento,
+  cart, totals, totaleConSconto, discountAmount, cartDiscount,
+  modoPagamento, setModoPagamento,
   onUpdateQty, onClear, onSubmit, isPending, cartExpanded, onToggleExpand,
+  onLongPressItem, onLongPressTotal, onRemoveDiscount,
 }: {
   cart: CartItem[];
   totals: ReturnType<typeof calcTotals>;
+  totaleConSconto: number;
+  discountAmount: number;
+  cartDiscount: { type: "percent" | "value"; amount: number } | null;
   modoPagamento: string;
   setModoPagamento: (m: "contanti" | "elettronico") => void;
   onUpdateQty: (idx: number, delta: number) => void;
@@ -1117,8 +1175,13 @@ function MobileCompactCart({
   isPending: boolean;
   cartExpanded: boolean;
   onToggleExpand: () => void;
+  onLongPressItem: (idx: number) => void;
+  onLongPressTotal: () => void;
+  onRemoveDiscount: () => void;
 }) {
   const lastTapRef = useRef<number>(0);
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const totalLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleDoubleTap = () => {
     const now = Date.now();
@@ -1126,15 +1189,29 @@ function MobileCompactCart({
     lastTapRef.current = now;
   };
 
+  const startItemLongPress = (idx: number) => {
+    longPressTimer.current = setTimeout(() => onLongPressItem(idx), 500);
+  };
+  const cancelItemLongPress = () => {
+    if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
+  };
+
+  const startTotalLongPress = () => {
+    totalLongPressTimer.current = setTimeout(() => onLongPressTotal(), 600);
+  };
+  const cancelTotalLongPress = () => {
+    if (totalLongPressTimer.current) { clearTimeout(totalLongPressTimer.current); totalLongPressTimer.current = null; }
+  };
+
   const visibleItems = cartExpanded ? cart : cart.slice(0, 2);
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
       {/* Header */}
-      <div className="px-2 py-1.5 border-b flex items-center justify-between shrink-0 bg-gray-50">
-        <span className="text-[10px] font-semibold text-gray-600 flex items-center gap-1">
+      <div className="px-1.5 py-1.5 border-b flex items-center justify-between shrink-0 bg-gray-50">
+        <span className="text-[9px] font-semibold text-gray-600 flex items-center gap-0.5">
           <ShoppingCart className="w-3 h-3" />
-          {cart.length > 0 ? `${cart.reduce((s, i) => s + i.quantita, 0)} art.` : "Carrello"}
+          {cart.length > 0 ? `${cart.reduce((s, i) => s + i.quantita, 0)}` : "0"}
         </span>
         {cart.length > 0 && (
           <button onClick={onClear} className="text-red-400 hover:text-red-600 transition-colors">
@@ -1143,72 +1220,111 @@ function MobileCompactCart({
         )}
       </div>
 
-      {/* Items — doppio tap per espandere */}
+      {/* Items — doppio tap per espandere, long press per cambia prezzo */}
       <div
         className="border-b overflow-y-auto shrink-0"
-        style={{ maxHeight: cartExpanded ? "45%" : 88 }}
+        style={{ maxHeight: cartExpanded ? "45%" : 80 }}
         onDoubleClick={onToggleExpand}
         onTouchEnd={handleDoubleTap}
       >
         {cart.length === 0 ? (
-          <div className="px-2 py-4 text-[9px] text-gray-300 text-center leading-snug">
-            Tocca un articolo per aggiungerlo
+          <div className="px-1.5 py-3 text-[8px] text-gray-300 text-center leading-snug">
+            Tocca un articolo
           </div>
         ) : (
           <div className="divide-y">
             {visibleItems.map((item, idx) => (
-              <div key={idx} className="px-2 py-1.5 flex items-center gap-1">
+              <div
+                key={idx}
+                className="px-1.5 py-1 flex items-center gap-0.5 select-none"
+                onPointerDown={() => startItemLongPress(idx)}
+                onPointerUp={cancelItemLongPress}
+                onPointerLeave={cancelItemLongPress}
+                onContextMenu={(e) => { e.preventDefault(); onLongPressItem(idx); }}
+              >
                 <div className="flex-1 min-w-0">
-                  <p className="text-[10px] font-medium text-gray-800 truncate leading-tight">{item.nome}</p>
-                  <p className="text-[9px] text-gray-400 font-mono">€{item.prezzoUnitario.toFixed(2)}×{item.quantita}</p>
+                  <p className="text-[9px] font-medium text-gray-800 truncate leading-tight">{item.nome}</p>
+                  <p className="text-[8px] text-gray-400 font-mono">€{item.prezzoUnitario.toFixed(2)}×{item.quantita}</p>
                 </div>
-                <div className="flex items-center gap-0.5 shrink-0">
+                <div className="flex flex-col items-center gap-0 shrink-0">
                   <button
-                    onClick={() => onUpdateQty(idx, -1)}
-                    className="w-5 h-5 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center"
-                  >
-                    <Minus className="w-2.5 h-2.5" />
-                  </button>
-                  <button
-                    onClick={() => onUpdateQty(idx, 1)}
-                    className="w-5 h-5 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center"
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => { e.stopPropagation(); cancelItemLongPress(); onUpdateQty(idx, 1); }}
+                    className="w-4 h-4 flex items-center justify-center text-gray-500 hover:text-gray-800"
                   >
                     <Plus className="w-2.5 h-2.5" />
+                  </button>
+                  <span className="text-[8px] font-bold text-gray-700 leading-none">{item.quantita}</span>
+                  <button
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => { e.stopPropagation(); cancelItemLongPress(); onUpdateQty(idx, -1); }}
+                    className="w-4 h-4 flex items-center justify-center text-gray-500 hover:text-gray-800"
+                  >
+                    <Minus className="w-2.5 h-2.5" />
                   </button>
                 </div>
               </div>
             ))}
             {!cartExpanded && cart.length > 2 && (
-              <div className="px-2 py-1 text-[8px] text-gray-400 text-center bg-gray-50">
-                +{cart.length - 2} altri · doppio tap
+              <div className="px-1.5 py-0.5 text-[7px] text-gray-400 text-center bg-gray-50">
+                +{cart.length - 2} · 2×tap
               </div>
             )}
           </div>
         )}
       </div>
 
-      {/* Totale */}
+      {/* Totale — long press per aggiungere sconto */}
       {cart.length > 0 && (
-        <div className="px-2 py-1.5 border-b shrink-0">
-          <div className="flex justify-between items-center">
-            <span className="text-[9px] text-gray-500 uppercase tracking-wide">Totale</span>
-            <span className="text-sm font-bold font-mono text-gray-900">€{formatCurrency(totals.complessivo)}</span>
-          </div>
+        <div
+          className="px-1.5 py-1 border-b shrink-0 select-none cursor-pointer active:bg-blue-50 transition-colors"
+          onPointerDown={startTotalLongPress}
+          onPointerUp={cancelTotalLongPress}
+          onPointerLeave={cancelTotalLongPress}
+          onContextMenu={(e) => { e.preventDefault(); onLongPressTotal(); }}
+          title="Tieni premuto per aggiungere uno sconto"
+        >
+          {discountAmount > 0 ? (
+            <>
+              <div className="flex justify-between items-center">
+                <span className="text-[8px] text-gray-400 line-through">€{formatCurrency(totals.complessivo)}</span>
+                <button
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => { e.stopPropagation(); onRemoveDiscount(); }}
+                  className="text-red-400 hover:text-red-600"
+                >
+                  <X className="w-2.5 h-2.5" />
+                </button>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-[8px] text-amber-600 flex items-center gap-0.5">
+                  <Tag className="w-2.5 h-2.5" />
+                  {cartDiscount?.type === "percent" ? `−${cartDiscount.amount}%` : `−€${formatCurrency(discountAmount)}`}
+                </span>
+                <span className="text-sm font-bold font-mono text-green-700">€{formatCurrency(totaleConSconto)}</span>
+              </div>
+            </>
+          ) : (
+            <div className="flex justify-between items-center">
+              <span className="text-[8px] text-gray-500 uppercase tracking-wide">Tot.</span>
+              <span className="text-sm font-bold font-mono text-gray-900">€{formatCurrency(totaleConSconto)}</span>
+            </div>
+          )}
         </div>
       )}
 
       {/* Pagamento + Emetti */}
-      <div className="px-2 py-2 space-y-1.5 shrink-0 mt-auto">
-        <div className="grid grid-cols-2 gap-1">
+      <div className="px-1.5 py-1.5 space-y-1 shrink-0 mt-auto">
+        <div className="grid grid-cols-2 gap-0.5">
           <button
             onClick={() => setModoPagamento("contanti")}
-            className={`h-9 rounded-lg text-[9px] font-bold transition-all active:scale-95 ${modoPagamento === "contanti" ? "bg-[#1e3a5f] text-white shadow" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
+            className={`h-8 rounded-lg text-[8px] font-bold transition-all active:scale-95 ${modoPagamento === "contanti" ? "bg-[#1e3a5f] text-white shadow" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
           >
             💵 Cont.
           </button>
           <button
             onClick={() => setModoPagamento("elettronico")}
-            className={`h-9 rounded-lg text-[9px] font-bold transition-all active:scale-95 ${modoPagamento === "elettronico" ? "bg-[#1e3a5f] text-white shadow" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
+            className={`h-8 rounded-lg text-[8px] font-bold transition-all active:scale-95 ${modoPagamento === "elettronico" ? "bg-[#1e3a5f] text-white shadow" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
           >
             💳 Carta
           </button>
@@ -1216,7 +1332,7 @@ function MobileCompactCart({
         <button
           onClick={onSubmit}
           disabled={isPending || cart.length === 0}
-          className="w-full bg-green-600 hover:bg-green-700 disabled:opacity-40 text-white font-bold py-3 rounded-xl text-[11px] flex items-center justify-center gap-1 active:scale-95 transition-all shadow-md"
+          className="w-full bg-green-600 hover:bg-green-700 disabled:opacity-40 text-white font-bold py-2.5 rounded-xl text-[10px] flex items-center justify-center gap-1 active:scale-95 transition-all shadow-md"
         >
           {isPending ? "..." : <><Send className="w-3 h-3" />Emetti</>}
         </button>
@@ -1282,6 +1398,181 @@ function PriceNumpadDialog({ art, text, onTextChange, onConfirm, onClose }: {
             className="w-full bg-[#1e3a5f] disabled:opacity-40 text-white font-bold py-4 rounded-xl text-base active:scale-95 transition-all shadow"
           >
             Aggiungi al carrello — € {amount > 0 ? amount.toFixed(2) : "0,00"}
+          </button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── ChangePriceDialog ─────────────────────────────────────────────────────────
+
+function ChangePriceDialog({ item, text, onTextChange, onConfirm, onClose }: {
+  item: CartItem;
+  text: string;
+  onTextChange: (t: string) => void;
+  onConfirm: (price: number) => void;
+  onClose: () => void;
+}) {
+  const amount = Number(text.replace(",", "."));
+
+  const appendKey = (key: string) => {
+    onTextChange((() => {
+      if (key === "⌫") return text.length > 1 ? text.slice(0, -1) : "0";
+      if (key === ",") return text.includes(",") ? text : (text === "0" ? "0," : text + ",");
+      if (text.includes(",") && text.split(",")[1]!.length >= 2) return text;
+      if (text === "0" && key !== ",") return key;
+      return text + key;
+    })());
+  };
+
+  const keys = ["7", "8", "9", "4", "5", "6", "1", "2", "3", ",", "0", "⌫"];
+
+  return (
+    <Dialog open={true} onOpenChange={open => !open && onClose()}>
+      <DialogContent className="w-[calc(100%-2rem)] max-w-xs rounded-2xl p-0 overflow-hidden">
+        <DialogHeader className="px-4 pt-4 pb-2 border-b">
+          <DialogTitle className="text-sm font-semibold truncate">Cambia prezzo</DialogTitle>
+          <p className="text-xs text-muted-foreground truncate">{item.nome}</p>
+        </DialogHeader>
+        <div className="px-4 py-3 space-y-3">
+          <div className="bg-gray-50 border rounded-xl px-4 py-3 text-right text-3xl font-mono font-bold text-gray-900 tracking-tight">
+            € {text || "0"}
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            {keys.map(k => (
+              <button
+                key={k}
+                onClick={() => appendKey(k)}
+                className={`h-14 rounded-xl text-xl font-bold transition-all active:scale-95 ${
+                  k === "⌫"
+                    ? "bg-red-50 text-red-500 hover:bg-red-100"
+                    : k === ","
+                      ? "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                      : "bg-gray-100 text-gray-800 hover:bg-gray-200"
+                }`}
+              >
+                {k}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={() => { if (amount > 0) onConfirm(amount); }}
+            disabled={amount <= 0}
+            className="w-full bg-[#1e3a5f] disabled:opacity-40 text-white font-bold py-4 rounded-xl text-base active:scale-95 transition-all shadow"
+          >
+            Conferma — € {amount > 0 ? amount.toFixed(2) : "0,00"}
+          </button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── DiscountDialog ────────────────────────────────────────────────────────────
+
+function DiscountDialog({ total, onApply, onClose }: {
+  total: number;
+  onApply: (type: "percent" | "value", amount: number) => void;
+  onClose: () => void;
+}) {
+  const [tab, setTab] = useState<"value" | "percent">("value");
+  const [text, setText] = useState("0");
+
+  const amount = Number(text.replace(",", "."));
+  const preview = tab === "percent"
+    ? Math.round(total * amount / 100 * 100) / 100
+    : Math.min(amount, total);
+  const isValid = amount > 0 && (tab === "percent" ? amount <= 100 : amount <= total);
+
+  const appendKey = (key: string) => {
+    setText(prev => {
+      if (key === "⌫") return prev.length > 1 ? prev.slice(0, -1) : "0";
+      if (key === ",") {
+        if (tab === "percent") return prev; // no decimals for percent
+        return prev.includes(",") ? prev : (prev === "0" ? "0," : prev + ",");
+      }
+      if (prev.includes(",") && prev.split(",")[1]!.length >= 2) return prev;
+      if (prev === "0" && key !== ",") return key;
+      return prev + key;
+    });
+  };
+
+  const switchTab = (t: "value" | "percent") => {
+    setTab(t);
+    setText("0");
+  };
+
+  const keys = ["7", "8", "9", "4", "5", "6", "1", "2", "3", tab === "value" ? "," : "", "0", "⌫"];
+
+  return (
+    <Dialog open={true} onOpenChange={open => !open && onClose()}>
+      <DialogContent className="w-[calc(100%-2rem)] max-w-xs rounded-2xl p-0 overflow-hidden">
+        <DialogHeader className="px-4 pt-4 pb-0">
+          <DialogTitle className="text-sm font-semibold">Sconto sul totale</DialogTitle>
+          <p className="text-xs text-muted-foreground">Totale lordo: € {formatCurrency(total)}</p>
+        </DialogHeader>
+
+        {/* Tab switcher */}
+        <div className="px-4 pt-3">
+          <div className="grid grid-cols-2 gap-1 bg-gray-100 rounded-xl p-1">
+            <button
+              onClick={() => switchTab("value")}
+              className={`h-8 rounded-lg text-sm font-bold flex items-center justify-center gap-1 transition-all ${
+                tab === "value" ? "bg-white shadow text-[#1e3a5f]" : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              <span className="font-mono">€</span> Valore
+            </button>
+            <button
+              onClick={() => switchTab("percent")}
+              className={`h-8 rounded-lg text-sm font-bold flex items-center justify-center gap-1 transition-all ${
+                tab === "percent" ? "bg-white shadow text-[#1e3a5f]" : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              <Percent className="w-3.5 h-3.5" /> Percentuale
+            </button>
+          </div>
+        </div>
+
+        <div className="px-4 py-3 space-y-3">
+          <div className="bg-gray-50 border rounded-xl px-4 py-3 text-right text-3xl font-mono font-bold text-gray-900 tracking-tight">
+            {tab === "value" ? "€ " : ""}{text || "0"}{tab === "percent" ? " %" : ""}
+          </div>
+          {isValid && (
+            <div className="text-center text-sm text-green-700 bg-green-50 rounded-lg py-1.5">
+              Totale dopo sconto: <strong>€ {formatCurrency(total - preview)}</strong>
+            </div>
+          )}
+          <div className="grid grid-cols-3 gap-2">
+            {keys.map((k, i) => (
+              k === "" ? (
+                <div key={i} />
+              ) : (
+                <button
+                  key={k}
+                  onClick={() => appendKey(k)}
+                  className={`h-12 rounded-xl text-xl font-bold transition-all active:scale-95 ${
+                    k === "⌫"
+                      ? "bg-red-50 text-red-500 hover:bg-red-100"
+                      : k === ","
+                        ? "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                        : "bg-gray-100 text-gray-800 hover:bg-gray-200"
+                  }`}
+                >
+                  {k}
+                </button>
+              )
+            ))}
+          </div>
+          <button
+            onClick={() => { if (isValid) onApply(tab, amount); }}
+            disabled={!isValid}
+            className="w-full bg-amber-500 hover:bg-amber-600 disabled:opacity-40 text-white font-bold py-4 rounded-xl text-base active:scale-95 transition-all shadow"
+          >
+            {isValid
+              ? `Applica sconto — risparmio € ${formatCurrency(preview)}`
+              : "Inserisci uno sconto valido"}
           </button>
         </div>
       </DialogContent>

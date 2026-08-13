@@ -85,7 +85,7 @@ Aiuti gli operatori di cassa a usare l'app con istruzioni chiare e passo per pas
 Se l'utente descrive un problema, chiedigli di indicare cosa vede sullo schermo.
 Non inventare funzionalità che non ho descritto. Se non sai la risposta, dillo chiaramente.`;
 
-router.post("/api/chat", async (req, res) => {
+router.post("/chat", async (req, res) => {
   const { messages } = req.body as { messages?: Array<{ role: string; content: string }> };
 
   if (!Array.isArray(messages) || messages.length === 0) {

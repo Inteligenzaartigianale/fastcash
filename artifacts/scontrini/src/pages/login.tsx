@@ -28,7 +28,15 @@ function DesktopLogin() {
   const [pollStatus, setPollStatus] = useState<"waiting" | "detected">("waiting");
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
-  const appUrl = window.location.origin + (BASE || "");
+  // Prefer the production URL baked at build time; fall back to current origin
+  // (useful in dev mode where APP_URL env var is not set).
+  const prodUrl = (import.meta.env.VITE_APP_URL as string | undefined)?.trim();
+  const appUrl = prodUrl || (window.location.origin + (BASE || ""));
+  const isDevOrigin = !prodUrl && (
+    window.location.hostname === "localhost" ||
+    window.location.hostname.endsWith(".replit.dev") ||
+    window.location.hostname.endsWith(".repl.co")
+  );
 
   useEffect(() => {
     const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
@@ -116,11 +124,21 @@ function DesktopLogin() {
               </li>
               <li className="flex gap-3">
                 <span className="flex items-center justify-center w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs font-bold shrink-0 mt-0.5">3</span>
-                <span>
-                  Assicurati che l'URL nell'estensione sia{" "}
-                  <code className="text-xs bg-muted px-1 py-0.5 rounded break-all">{appUrl}</code>
-                  {" "}e premi <strong>Invia cookie</strong>
-                </span>
+                <div className="flex-1">
+                  <span>
+                    Assicurati che l'URL nell'estensione sia{" "}
+                    <code className="text-xs bg-muted px-1 py-0.5 rounded break-all">{appUrl}</code>
+                    {" "}e premi <strong>Invia cookie</strong>
+                  </span>
+                  {isDevOrigin && (
+                    <div className="mt-2 rounded-lg bg-amber-50 border border-amber-300 px-3 py-2 text-xs text-amber-800">
+                      ⚠️ Stai aprendo l'app in modalità sviluppo. Per usare l'estensione con la produzione apri Chrome su{" "}
+                      <a href="https://link-sender-vignolinifederi.replit.app" target="_blank" rel="noopener noreferrer" className="font-semibold underline">
+                        link-sender-vignolinifederi.replit.app
+                      </a>
+                    </div>
+                  )}
+                </div>
               </li>
               <li className="flex gap-3">
                 <span className="flex items-center justify-center w-6 h-6 rounded-full bg-green-600 text-white text-xs font-bold shrink-0 mt-0.5">✓</span>

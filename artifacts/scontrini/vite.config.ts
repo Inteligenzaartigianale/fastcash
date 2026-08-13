@@ -62,6 +62,9 @@ export default defineConfig({
     // Bake the build version into the bundle so the running app knows its own
     // release ID and can compare it against the server's version.json.
     'import.meta.env.VITE_APP_VERSION': JSON.stringify(APP_VERSION),
+    // Production URL — used in the login page so the extension step always
+    // shows the correct URL regardless of the domain the page is opened from.
+    'import.meta.env.VITE_APP_URL': JSON.stringify(process.env.APP_URL ?? ""),
   },
   plugins: [
     versionPlugin(),

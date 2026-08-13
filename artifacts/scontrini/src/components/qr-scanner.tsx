@@ -230,9 +230,17 @@ export function QrLoginScanner({ onSuccess }: Props) {
       {phase === "error" && (
         <div className="flex flex-col items-center gap-4 py-6">
           <XCircle className="w-10 h-10 text-red-500" />
-          <p className="text-sm text-red-800 text-center px-4">{errorMsg}</p>
+          <p className="text-sm text-red-800 text-center px-4 font-medium">{errorMsg}</p>
+          {(errorMsg.toLowerCase().includes("scadut") ||
+            errorMsg.toLowerCase().includes("non valido") ||
+            errorMsg.includes("404")) && (
+            <div className="w-full rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800 text-center">
+              <p className="font-semibold mb-1">QR non più valido</p>
+              <p>Torna al PC, premi <strong>"Rigenera"</strong> nel pannello QR e scansiona il nuovo codice.</p>
+            </div>
+          )}
           <Button size="lg" className="w-full bg-[#1e3a5f]" onClick={retry}>
-            Riprova
+            Scansiona di nuovo
           </Button>
         </div>
       )}

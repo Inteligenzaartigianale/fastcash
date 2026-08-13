@@ -168,7 +168,14 @@ function QrShareModal({ onClose }: { onClose: () => void }) {
             {state === "error" && (
               <div className="w-full rounded-xl bg-red-50 border border-red-200 p-4 text-sm text-red-800 flex flex-col items-center gap-3">
                 <XCircle className="w-8 h-8 text-red-500" />
-                <p className="text-center">{error}</p>
+                <p className="text-center font-medium">{error}</p>
+                {(error.toLowerCase().includes("sessione") || error.includes("401")) && (
+                  <div className="w-full rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800 text-center space-y-1">
+                    <p className="font-semibold">Come risolvere</p>
+                    <p>La sessione ADE è scaduta sul server.<br />
+                    Clicca sull'icona dell'estensione <strong>Scontrini ADE</strong> in Chrome e premi <strong>"Invia cookie"</strong>, poi riprova.</p>
+                  </div>
+                )}
                 <Button size="sm" variant="outline" onClick={load}>
                   Riprova
                 </Button>

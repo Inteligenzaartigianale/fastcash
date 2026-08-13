@@ -9,6 +9,7 @@ import RisultatoPage from "@/pages/risultato";
 import AdminPage from "@/pages/admin";
 import StoricoPage from "@/pages/storico";
 import { isCapacitor } from "@/lib/capacitor";
+import { UpdateBanner } from "@/components/update-banner";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -47,6 +48,8 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
+        {/* OTA update banner — shown when the server has a newer web bundle */}
+        <UpdateBanner />
         <WouterRouter base={base}>
           <Router />
         </WouterRouter>

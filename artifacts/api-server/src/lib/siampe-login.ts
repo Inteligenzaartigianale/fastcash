@@ -234,8 +234,11 @@ export async function loginWithSiampe(
     // login as a bot even when credentials are correct.
     await page.evaluateOnNewDocument(() => {
       Object.defineProperty(navigator, "webdriver", { get: () => false });
+      // This callback runs inside the browser context (not Node.js), so
+      // `window` exists at runtime. The ts-expect-error suppresses the Node
+      // compiler's "Cannot find name 'window'" diagnostic.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      delete (window as any).chrome?.runtime;
+      delete (globalThis as any).chrome?.runtime;
       Object.defineProperty(navigator, "plugins", { get: () => [1, 2, 3] });
       Object.defineProperty(navigator, "languages", { get: () => ["it-IT", "it", "en-US"] });
     });
@@ -640,7 +643,7 @@ export async function loginWithSiampe(
       // domain but is NOT the DCO service — FATSC is only issued by
       // /ser/documenticommercialionline/. The old guard (!onIvaservizi()) was
       // wrong because it skipped this step when we landed on InstradamentofcWeb.
-      const hasFATSCAlready = (await page.cookies().catch(() => [])).some((c) => c.name === "FATSC");
+      const hasFATSCAlready = (await page.cookies().catch((): Awaited<ReturnType<typeof page.cookies>> => [])).some((c) => c.name === "FATSC");
       if (!hasFATSCAlready) {
         logger.info({ currentUrl: page.url() }, "No FATSC yet — navigating Puppeteer directly to DCO service");
         await page.goto(DCO_URL, { waitUntil: "domcontentloaded", timeout: 45000 }).catch((e) => {

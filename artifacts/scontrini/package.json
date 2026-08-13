@@ -12,7 +12,7 @@
     "cap:add": "npx cap add android",
     "cap:sync": "npx cap sync android",
     "cap:open": "npx cap open android",
-    "cap:build": "pnpm build:android && npx cap sync android"
+    "cap:build": "pnpm build:android && (npx cap add android 2>/dev/null || true) && npx cap sync android"
   },
   "devDependencies": {
     "@capacitor/android": "^8.5.0",

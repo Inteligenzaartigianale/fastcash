@@ -50,6 +50,13 @@ jobs:
           BASE_PATH: /
           PORT: 3000
           NODE_ENV: production
+          # Pin the version to the git commit SHA so each deploy produces a
+          # unique, stable version string — required for reliable OTA detection.
+          APP_VERSION: ${{ github.sha }}
+          # CAP_SERVER_URL is the production URL where the frontend is hosted.
+          # When set, version.json is served from this URL and the running APK
+          # can detect new deployments.  Set this secret in your repo settings.
+          CAP_SERVER_URL: ${{ secrets.CAP_SERVER_URL }}
         run: pnpm vite build --config vite.config.ts
 
       # ── Java 17 ───────────────────────────────────────────────────────────
@@ -95,6 +102,10 @@ jobs:
 
       - name: Sync Capacitor
         working-directory: artifacts/scontrini
+        env:
+          # Must match the CAP_SERVER_URL used in the web build above so that
+          # capacitor.config.ts writes the same server.url into the native project.
+          CAP_SERVER_URL: ${{ secrets.CAP_SERVER_URL }}
         run: npx cap sync android
 
       # ── Build APK ─────────────────────────────────────────────────────────

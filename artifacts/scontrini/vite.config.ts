@@ -1,9 +1,38 @@
 import path from 'path';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 
 import runtimeErrorOverlay from '@replit/vite-plugin-runtime-error-modal';
+
+// ── OTA version plugin ────────────────────────────────────────────────────────
+// Writes public/version.json (served as a static file alongside the app) and
+// injects the same string as import.meta.env.VITE_APP_VERSION into the bundle.
+// This couples the version to the *web build*, not the API process start-time:
+//   • A new frontend deploy → new version.json → running clients detect it
+//   • An API-only restart  → version.json unchanged → no false update banner
+//
+// Set APP_VERSION in the environment to a fixed string (e.g. git SHA, deploy
+// timestamp) so the version is stable across server restarts.  Falls back to
+// the build time so each build always produces a distinct version file.
+const APP_VERSION =
+  process.env.APP_VERSION ?? new Date().toISOString();
+
+function versionPlugin(): Plugin {
+  return {
+    name: 'vite-plugin-version',
+    // Use generateBundle (not buildStart/writeFile) so version.json is emitted
+    // into dist/public/ as a build artifact — never into tracked public/ source.
+    // This keeps the source tree clean: version.json only exists in build output.
+    generateBundle() {
+      this.emitFile({
+        type: 'asset',
+        fileName: 'version.json',
+        source: JSON.stringify({ version: APP_VERSION }),
+      });
+    },
+  };
+}
 
 const rawPort = process.env.PORT;
 
@@ -29,7 +58,13 @@ if (!basePath) {
 
 export default defineConfig({
   base: basePath,
+  define: {
+    // Bake the build version into the bundle so the running app knows its own
+    // release ID and can compare it against the server's version.json.
+    'import.meta.env.VITE_APP_VERSION': JSON.stringify(APP_VERSION),
+  },
   plugins: [
+    versionPlugin(),
     react(),
     tailwindcss(),
     runtimeErrorOverlay(),

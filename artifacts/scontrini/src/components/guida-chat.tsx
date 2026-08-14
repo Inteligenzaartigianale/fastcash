@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Send, Loader2, Bot, User, ImagePlus, Sparkles, ShoppingCart } from "lucide-react";
+import { Send, Loader2, Bot, User, Sparkles, ShoppingCart, ChevronLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useLocation } from "wouter";
 
@@ -79,31 +79,12 @@ export function GuidaChat() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    const saved = localStorage.getItem("azienda_logo");
-    if (saved) setLogoUrl(saved);
-  }, []);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isLoading]);
-
-  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const url = ev.target?.result as string;
-      setLogoUrl(url);
-      localStorage.setItem("azienda_logo", url);
-    };
-    reader.readAsDataURL(file);
-  };
 
   const sendMessage = async (text?: string) => {
     const content = (text ?? input).trim();
@@ -187,45 +168,37 @@ export function GuidaChat() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Logo + title */}
-      <div className="shrink-0 flex items-center gap-3 pb-3 border-b border-gray-200 mb-3">
-        <div
-          className="relative cursor-pointer group"
-          onClick={() => fileRef.current?.click()}
-          title="Clicca per caricare il logo aziendale"
+      {/* Header */}
+      <div className="shrink-0 flex items-center gap-2 pb-3 border-b border-gray-200 mb-3">
+        {/* Tasto indietro */}
+        <button
+          onClick={() => setLocation("/")}
+          className="shrink-0 flex items-center justify-center w-9 h-9 rounded-xl bg-gray-100 hover:bg-gray-200 active:scale-95 transition-all"
+          title="Torna alla cassa"
         >
-          {logoUrl ? (
-            <img
-              src={logoUrl}
-              alt="Logo aziendale"
-              className="h-10 w-auto max-w-[120px] object-contain rounded"
-            />
-          ) : (
-            <div className="h-10 w-24 border-2 border-dashed border-gray-300 rounded flex flex-col items-center justify-center gap-0.5 bg-gray-50 group-hover:border-[#1e3a5f] group-hover:bg-blue-50 transition-colors">
-              <ImagePlus className="w-3.5 h-3.5 text-gray-400 group-hover:text-[#1e3a5f]" />
-              <span className="text-[9px] text-gray-400 group-hover:text-[#1e3a5f] leading-tight text-center">
-                Logo
-              </span>
-            </div>
-          )}
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={handleLogoUpload}
-          />
-        </div>
+          <ChevronLeft className="w-5 h-5 text-gray-700" />
+        </button>
+
+        {/* Logo Touch Systems fisso */}
+        <img
+          src="/logo-touch-systems.png"
+          alt="Touch Systems"
+          className="h-9 w-auto max-w-[110px] object-contain"
+        />
+
+        {/* Titolo assistente */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5">
             <Sparkles className="w-4 h-4 text-[#1e3a5f] shrink-0" />
-            <span className="font-semibold text-[#1e3a5f] text-sm">Assistente Scontrini</span>
+            <span className="font-semibold text-[#1e3a5f] text-sm">Assistente</span>
           </div>
           <p className="text-xs text-gray-500">Chiedi come usare l'app</p>
         </div>
+
+        {/* Bottone cassa (shortcut visivo) */}
         <button
           onClick={() => setLocation("/")}
-          className="shrink-0 flex items-center gap-1.5 bg-[#1e3a5f] text-white text-xs font-semibold px-3 py-2 rounded-lg hover:bg-[#162d4a] active:scale-95 transition-all"
+          className="shrink-0 flex items-center gap-1 bg-[#1e3a5f] text-white text-xs font-semibold px-2.5 py-2 rounded-lg hover:bg-[#162d4a] active:scale-95 transition-all"
           title="Torna alla cassa"
         >
           <ShoppingCart className="w-3.5 h-3.5" />

@@ -34,27 +34,17 @@ function versionPlugin(): Plugin {
   };
 }
 
-const rawPort = process.env.PORT;
-
-if (!rawPort) {
-  throw new Error(
-    'PORT environment variable is required but was not provided.',
-  );
-}
-
+// During `vite build` PORT is not needed (only server/preview use it).
+// Use a fallback so the build step doesn't fail in the deployment container.
+const rawPort = process.env.PORT ?? '3000';
 const port = Number(rawPort);
 
 if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
-const basePath = process.env.BASE_PATH;
-
-if (!basePath) {
-  throw new Error(
-    'BASE_PATH environment variable is required but was not provided.',
-  );
-}
+// BASE_PATH defaults to "/" for production builds where it isn't injected.
+const basePath = process.env.BASE_PATH ?? '/';
 
 export default defineConfig({
   base: basePath,

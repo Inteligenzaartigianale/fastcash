@@ -44,6 +44,7 @@ const IVA_OPTIONS: AliquotaIva[] = ["22", "10", "5", "4", "N1", "N2", "N3", "N4"
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function itemTotale(item: CartItem): number {
+  if (item.omaggio) return 0; // gli omaggi non incidono sul totale da pagare
   return item.quantita * item.prezzoUnitario - item.sconto;
 }
 

@@ -286,8 +286,9 @@ router.post("/ae/documenti", async (req, res): Promise<void> => {
   const session = getSession()!;
 
   const [maxDcoRow] = await db.select().from(impostazioniTable).limit(1);
+  // Gli articoli omaggio non vengono addebitati al cliente (omaggio = gratis)
   const importoDco = input.righe.reduce(
-    (sum, riga) => sum + Math.max(0, riga.quantita * riga.prezzoUnitario - (riga.sconto ?? 0)),
+    (sum, riga) => riga.omaggio ? sum : sum + Math.max(0, riga.quantita * riga.prezzoUnitario - (riga.sconto ?? 0)),
     0,
   );
   const maxDco = maxDcoRow?.importoMassimoDco == null ? null : Number(maxDcoRow.importoMassimoDco);

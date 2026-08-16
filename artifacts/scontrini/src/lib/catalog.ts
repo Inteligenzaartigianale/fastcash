@@ -62,6 +62,10 @@ export interface Impostazioni {
   gestioneResto: boolean;
   mostraTipoOperazione: boolean;
   carrelloLargo: boolean;
+  nrFattura: boolean;
+  nrPrestazioni: boolean;
+  nrSanitarie: boolean;
+  nrTicketNr: boolean;
   dimensioneTasti: "S" | "M" | "L" | "XL" | "XXL";
 }
 

@@ -27,6 +27,10 @@ router.get("/catalog", async (_req, res): Promise<void> => {
     gestioneResto: false,
     mostraTipoOperazione: false,
     carrelloLargo: false,
+    nrFattura: false,
+    nrPrestazioni: false,
+    nrSanitarie: false,
+    nrTicketNr: false,
     dimensioneTasti: "S",
   };
   res.json({
@@ -43,6 +47,10 @@ router.get("/catalog", async (_req, res): Promise<void> => {
       gestioneResto: settings.gestioneResto,
       mostraTipoOperazione: settings.mostraTipoOperazione,
       carrelloLargo: settings.carrelloLargo,
+      nrFattura: settings.nrFattura,
+      nrPrestazioni: settings.nrPrestazioni,
+      nrSanitarie: settings.nrSanitarie,
+      nrTicketNr: settings.nrTicketNr,
       dimensioneTasti: settings.dimensioneTasti,
     },
   });
@@ -56,6 +64,10 @@ router.put("/catalog/impostazioni", async (req, res): Promise<void> => {
   const gestioneResto = req.body?.gestioneResto;
   const mostraTipoOperazione = req.body?.mostraTipoOperazione;
   const carrelloLargo = req.body?.carrelloLargo;
+  const nrFattura = req.body?.nrFattura;
+  const nrPrestazioni = req.body?.nrPrestazioni;
+  const nrSanitarie = req.body?.nrSanitarie;
+  const nrTicketNr = req.body?.nrTicketNr;
   const dimensioneTasti = req.body?.dimensioneTasti;
   if (value !== null && (!Number.isFinite(value) || value < 0)) {
     res.status(400).json({ error: "L'importo massimo deve essere un numero positivo o vuoto" });
@@ -81,6 +93,12 @@ router.put("/catalog/impostazioni", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Il valore del carrello largo non è valido" });
     return;
   }
+  for (const [key, val] of [["nrFattura", nrFattura], ["nrPrestazioni", nrPrestazioni], ["nrSanitarie", nrSanitarie], ["nrTicketNr", nrTicketNr]]) {
+    if (val !== undefined && typeof val !== "boolean") {
+      res.status(400).json({ error: `Il valore di ${key} non è valido` });
+      return;
+    }
+  }
   if (dimensioneTasti !== undefined && !["S", "M", "L", "XL", "XXL"].includes(dimensioneTasti)) {
     res.status(400).json({ error: "La dimensione dei tasti non è valida" });
     return;
@@ -96,6 +114,10 @@ router.put("/catalog/impostazioni", async (req, res): Promise<void> => {
       gestioneResto: gestioneResto ?? false,
       mostraTipoOperazione: mostraTipoOperazione ?? false,
       carrelloLargo: carrelloLargo ?? false,
+      nrFattura: nrFattura ?? false,
+      nrPrestazioni: nrPrestazioni ?? false,
+      nrSanitarie: nrSanitarie ?? false,
+      nrTicketNr: nrTicketNr ?? false,
       dimensioneTasti: dimensioneTasti ?? "S",
     })
     .onConflictDoUpdate({
@@ -109,6 +131,10 @@ router.put("/catalog/impostazioni", async (req, res): Promise<void> => {
         ...(gestioneResto !== undefined ? { gestioneResto } : {}),
         ...(mostraTipoOperazione !== undefined ? { mostraTipoOperazione } : {}),
         ...(carrelloLargo !== undefined ? { carrelloLargo } : {}),
+        ...(nrFattura !== undefined ? { nrFattura } : {}),
+        ...(nrPrestazioni !== undefined ? { nrPrestazioni } : {}),
+        ...(nrSanitarie !== undefined ? { nrSanitarie } : {}),
+        ...(nrTicketNr !== undefined ? { nrTicketNr } : {}),
         ...(dimensioneTasti !== undefined ? { dimensioneTasti } : {}),
         updatedAt: new Date(),
       },
@@ -121,6 +147,10 @@ router.put("/catalog/impostazioni", async (req, res): Promise<void> => {
     gestioneResto: row.gestioneResto,
     mostraTipoOperazione: row.mostraTipoOperazione,
     carrelloLargo: row.carrelloLargo,
+    nrFattura: row.nrFattura,
+    nrPrestazioni: row.nrPrestazioni,
+    nrSanitarie: row.nrSanitarie,
+    nrTicketNr: row.nrTicketNr,
     dimensioneTasti: row.dimensioneTasti,
   });
 });

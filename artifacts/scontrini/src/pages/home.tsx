@@ -153,7 +153,7 @@ export default function HomePage() {
   const emptyC: Catalog = {
     reparti: [],
     articoli: [],
-    impostazioni: { importoMassimoDco: null, tastieraFissa: false, mostraTicket: false, gestioneResto: false, mostraTipoOperazione: false, carrelloLargo: false, dimensioneTasti: "S" },
+    impostazioni: { importoMassimoDco: null, tastieraFissa: false, mostraTicket: false, gestioneResto: false, mostraTipoOperazione: false, carrelloLargo: false, nrFattura: false, nrPrestazioni: false, nrSanitarie: false, nrTicketNr: false, dimensioneTasti: "S" },
   };
 
   // Navigation
@@ -182,7 +182,8 @@ export default function HomePage() {
   const [fixedAmountText, setFixedAmountText] = useState("");
 
   // Payment
-  const [modoPagamento, setModoPagamento] = useState<"contanti" | "elettronico" | "ticket">("contanti");
+  const [modoPagamento, setModoPagamento] = useState<"contanti" | "elettronico" | "ticket" | "nr">("contanti");
+  const [tipoNR, setTipoNR] = useState<"fattura" | "prestazioni" | "sanitarie" | "ticketNr" | null>(null);
   const [importoContanti, setImportoContanti] = useState(0);
   const [importoElettronic, setImportoElettronico] = useState(0);
   const [importoTicket, setImportoTicket] = useState(0);
@@ -205,6 +206,11 @@ export default function HomePage() {
   const gestioneResto = cat.impostazioni?.gestioneResto ?? false;
   const mostraTipoOperazione = cat.impostazioni?.mostraTipoOperazione ?? false;
   const carrelloLargo = cat.impostazioni?.carrelloLargo ?? false;
+  const nrFattura     = cat.impostazioni?.nrFattura     ?? false;
+  const nrPrestazioni = cat.impostazioni?.nrPrestazioni ?? false;
+  const nrSanitarie   = cat.impostazioni?.nrSanitarie   ?? false;
+  const nrTicketNr    = cat.impostazioni?.nrTicketNr    ?? false;
+  const mostraNR = nrFattura || nrPrestazioni || nrSanitarie || nrTicketNr;
   const articoloPx = SIZES.find(s => s.label === articoloSize)?.px ?? SIZES[0].px;
 
   const articoliFiltrati = useMemo(() => {
@@ -271,12 +277,14 @@ export default function HomePage() {
     ? (gestioneResto ? importoContanti : totaleConSconto)
     : modoPagamento === "elettronico"
       ? importoElettronic
-      : importoTicket;
+      : modoPagamento === "ticket"
+        ? importoTicket
+        : totaleConSconto; // "nr" — l'intero importo va a non riscosso
   const resto = gestioneResto && modoPagamento === "contanti"
     ? Math.max(0, importoContanti - totaleConSconto)
     : 0;
 
-  const selectPaymentMode = useCallback((mode: "contanti" | "elettronico" | "ticket") => {
+  const selectPaymentMode = useCallback((mode: "contanti" | "elettronico" | "ticket" | "nr") => {
     setModoPagamento(mode);
     if (gestioneResto && mode === "contanti" && cart.length > 0) {
       const amount = Number(fixedAmountText.replace(",", "."));
@@ -404,6 +412,7 @@ export default function HomePage() {
     setImportoElettronico(0);
     setImportoTicket(0);
     setNTicket("");
+    setTipoNR(null);
     setCartDiscount(null);
   };
 
@@ -432,8 +441,13 @@ export default function HomePage() {
     }
     // Con gestione resto + contanti è valido che l'incassato superi il totale.
     // Blocca solo se l'incassato è insufficiente (mancano soldi).
-    const pagamentoInsufficient =
-      gestioneResto && modoPagamento === "contanti"
+    if (modoPagamento === "nr" && !tipoNR) {
+      toast({ title: "Seleziona il tipo di non riscosso", description: "Scegli tra Fattura, Prestazioni, Sanitarie o Ticket NR.", variant: "destructive" });
+      return;
+    }
+    const pagamentoInsufficient = modoPagamento === "nr"
+      ? false // non riscosso: il cliente non paga, è sempre bilanciato
+      : gestioneResto && modoPagamento === "contanti"
         ? importoContanti < totaleConSconto - 0.01
         : Math.abs(totaleConSconto - totalePagato) > 0.01;
     if (pagamentoInsufficient) {
@@ -478,6 +492,11 @@ export default function HomePage() {
           scontoAPagare: 0,
           documentoCollegato: tipoOp === "Reso" ? resoProgressivo.trim() : "",
         },
+        corrispettivoNonRiscosso: modoPagamento === "nr" ? {
+          emissioneFattura: tipoNR === "fattura" ? true : undefined,
+          prestazioniServizi: (tipoNR === "prestazioni" || tipoNR === "ticketNr") ? totaleConSconto : undefined,
+          creditoCessioneBene: tipoNR === "sanitarie" ? totaleConSconto : undefined,
+        } : undefined,
       }
     }, {
       onSuccess: (res) => {
@@ -816,6 +835,8 @@ export default function HomePage() {
             resto={resto}
             modoPagamento={modoPagamento}
             setModoPagamento={selectPaymentMode}
+            tipoNR={tipoNR}
+            setTipoNR={setTipoNR}
             importoContanti={importoContanti}
             setImportoContanti={setImportoContanti}
             importoElettronico={importoElettronic}
@@ -837,6 +858,11 @@ export default function HomePage() {
             fixedAmountText={fixedAmountText}
             onFixedAmountTextChange={handleFixedAmountTextChange}
             mostraTicket={cat.impostazioni?.mostraTicket ?? false}
+            mostraNR={mostraNR}
+            nrFattura={nrFattura}
+            nrPrestazioni={nrPrestazioni}
+            nrSanitarie={nrSanitarie}
+            nrTicketNr={nrTicketNr}
             gestioneResto={gestioneResto}
             onOpenFreeAmount={() => setShowFreeAmount(true)}
             onSaveFreeAmount={addFreeAmount}
@@ -968,8 +994,10 @@ interface CartPanelProps {
   totals: { complessivo: number; imponibile: number; imposta: number };
   totalePagato: number;
   resto: number;
-  modoPagamento: "contanti" | "elettronico" | "ticket";
-  setModoPagamento: (m: "contanti" | "elettronico" | "ticket") => void;
+  modoPagamento: "contanti" | "elettronico" | "ticket" | "nr";
+  setModoPagamento: (m: "contanti" | "elettronico" | "ticket" | "nr") => void;
+  tipoNR: "fattura" | "prestazioni" | "sanitarie" | "ticketNr" | null;
+  setTipoNR: (v: "fattura" | "prestazioni" | "sanitarie" | "ticketNr" | null) => void;
   importoContanti: number;
   setImportoContanti: (v: number) => void;
   importoElettronico: number;
@@ -991,6 +1019,11 @@ interface CartPanelProps {
   fixedAmountText: string;
   onFixedAmountTextChange: (value: string) => void;
   mostraTicket: boolean;
+  mostraNR: boolean;
+  nrFattura: boolean;
+  nrPrestazioni: boolean;
+  nrSanitarie: boolean;
+  nrTicketNr: boolean;
   gestioneResto: boolean;
   onOpenFreeAmount: () => void;
   onSaveFreeAmount: (amount: number, repartoId: string, aliquotaIva: AliquotaIva) => void;
@@ -998,20 +1031,24 @@ interface CartPanelProps {
 }
 
 function CartPanel({ cart, totals, totalePagato, resto, modoPagamento, setModoPagamento,
+  tipoNR, setTipoNR,
   importoContanti, setImportoContanti, importoElettronico, setImportoElettronico,
   importoTicket, setImportoTicket, nTicket, setNTicket, lotteria, setLotteria,
   onUpdateQty, onRemove, onEdit, onClear, onSubmit, isPending, reparti, tastieraFissa,
-  fixedAmountText, onFixedAmountTextChange, mostraTicket, gestioneResto, onOpenFreeAmount, onSaveFreeAmount, onOpenHistory }: CartPanelProps) {
+  fixedAmountText, onFixedAmountTextChange, mostraTicket, mostraNR, nrFattura, nrPrestazioni, nrSanitarie, nrTicketNr,
+  gestioneResto, onOpenFreeAmount, onSaveFreeAmount, onOpenHistory }: CartPanelProps) {
 
   const diff = totals.complessivo - totalePagato;
-  // Con gestione resto + contanti l'incassato può superare il totale: è bilanciato
-  // se il cliente ha dato abbastanza (diff <= 0 significa incassato >= totale).
-  const balanced = gestioneResto && modoPagamento === "contanti"
-    ? diff <= 0.01   // incassato copre o supera il totale
-    : Math.abs(diff) < 0.01;
-  const paymentModes: Array<"contanti" | "elettronico" | "ticket"> = mostraTicket
-    ? ["contanti", "elettronico", "ticket"]
-    : ["contanti", "elettronico"];
+  const balanced = modoPagamento === "nr"
+    ? true // non riscosso: il cliente non paga, sempre bilanciato
+    : gestioneResto && modoPagamento === "contanti"
+      ? diff <= 0.01
+      : Math.abs(diff) < 0.01;
+  const paymentModes: Array<"contanti" | "elettronico" | "ticket" | "nr"> = [
+    "contanti", "elettronico",
+    ...(mostraTicket ? ["ticket" as const] : []),
+    ...(mostraNR ? ["nr" as const] : []),
+  ];
 
   return (
     <div className="h-full flex flex-col">
@@ -1127,14 +1164,14 @@ function CartPanel({ cart, totals, totalePagato, resto, modoPagamento, setModoPa
           {/* Payment */}
           <div className="border-t px-4 py-3 space-y-3 shrink-0">
             {/* Mode buttons */}
-            <div className={`grid ${mostraTicket ? "grid-cols-3" : "grid-cols-2"} gap-2`}>
+            <div className={`grid grid-cols-${Math.min(paymentModes.length, 4)} gap-2`}>
               {paymentModes.map(m => (
                 <button
                   key={m}
                   onClick={() => setModoPagamento(m)}
                   className={`h-12 md:h-11 rounded-xl px-1 text-sm md:text-xs font-bold transition-all active:scale-[0.98] ${modoPagamento === m ? 'bg-[#1e3a5f] text-white shadow' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
                 >
-                  {m === "contanti" ? "💵 Contanti" : m === "elettronico" ? "💳 Carta" : "🎫 Ticket"}
+                  {m === "contanti" ? "💵 Cont." : m === "elettronico" ? "💳 Carta" : m === "ticket" ? "🎫 Ticket" : "📄 NR"}
                 </button>
               ))}
             </div>
@@ -1178,6 +1215,32 @@ function CartPanel({ cart, totals, totalePagato, resto, modoPagamento, setModoPa
                   <span className="text-xs text-gray-500 w-20 shrink-0">N° ticket</span>
                   <input className="flex-1 h-9 rounded border px-3 text-sm font-mono" placeholder="Facoltativo" value={nTicket} onChange={e => setNTicket(e.target.value)} />
                 </div>
+              </div>
+            )}
+            {modoPagamento === "nr" && (
+              <div className="space-y-2">
+                <p className="text-xs text-gray-500">Seleziona il tipo di corrispettivo non riscosso:</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {([ 
+                    { key: "fattura"     as const, label: "📄 Fattura",      show: nrFattura },
+                    { key: "prestazioni" as const, label: "🔧 Prestazioni",  show: nrPrestazioni },
+                    { key: "sanitarie"   as const, label: "🏥 Sanitarie",    show: nrSanitarie },
+                    { key: "ticketNr"    as const, label: "🎫 Ticket NR",    show: nrTicketNr },
+                  ] as const).filter(t => t.show).map(t => (
+                    <button
+                      key={t.key}
+                      onClick={() => setTipoNR(tipoNR === t.key ? null : t.key)}
+                      className={`h-10 rounded-xl text-xs font-semibold transition-all active:scale-95 ${tipoNR === t.key ? "bg-amber-600 text-white shadow" : "bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100"}`}
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+                {tipoNR && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800">
+                    Il totale <strong>€ {totals.complessivo.toFixed(2)}</strong> sarà trasmesso ad ADE come corrispettivo non riscosso.
+                  </div>
+                )}
               </div>
             )}
 

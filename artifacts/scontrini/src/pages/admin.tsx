@@ -96,48 +96,13 @@ export default function AdminPage() {
 function GeneraliPanel({ catalog, onRefresh }: { catalog: Catalog; onRefresh: () => void }) {
   const [saving, setSaving] = useState(false);
   const tastieraFissa = catalog.impostazioni?.tastieraFissa ?? false;
-  const mostraTicket = catalog.impostazioni?.mostraTicket ?? false;
   const gestioneResto = catalog.impostazioni?.gestioneResto ?? false;
   const mostraTipoOperazione = catalog.impostazioni?.mostraTipoOperazione ?? false;
+  const carrelloLargo = catalog.impostazioni?.carrelloLargo ?? false;
 
-  const toggleTastiera = async (checked: boolean) => {
+  const toggle = async (patch: Parameters<typeof updateImpostazioni>[0]) => {
     setSaving(true);
-    try {
-      await updateImpostazioni({ tastieraFissa: checked });
-      onRefresh();
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const toggleTicket = async (checked: boolean) => {
-    setSaving(true);
-    try {
-      await updateImpostazioni({ mostraTicket: checked });
-      onRefresh();
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const toggleGestioneResto = async (checked: boolean) => {
-    setSaving(true);
-    try {
-      await updateImpostazioni({ gestioneResto: checked });
-      onRefresh();
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const toggleMostraTipoOperazione = async (checked: boolean) => {
-    setSaving(true);
-    try {
-      await updateImpostazioni({ mostraTipoOperazione: checked });
-      onRefresh();
-    } finally {
-      setSaving(false);
-    }
+    try { await updateImpostazioni(patch); onRefresh(); } finally { setSaving(false); }
   };
 
   return (
@@ -147,61 +112,36 @@ function GeneraliPanel({ catalog, onRefresh }: { catalog: Catalog; onRefresh: ()
         <p className="text-xs text-gray-400 mt-1">Personalizza il comportamento della schermata di vendita.</p>
       </div>
       <div className="bg-white rounded-xl border p-4 shadow-sm flex items-start gap-3">
-        <div className="w-9 h-9 rounded-lg bg-[#1e3a5f]/10 text-[#1e3a5f] flex items-center justify-center shrink-0">
-          <Keyboard className="w-4 h-4" />
-        </div>
+        <div className="w-9 h-9 rounded-lg bg-[#1e3a5f]/10 text-[#1e3a5f] flex items-center justify-center shrink-0"><Keyboard className="w-4 h-4" /></div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-gray-800">Tastiera numerica fissa</p>
-          <p className="text-xs text-gray-500 mt-1">
-            Mostra sempre la tastiera per l’inserimento dell’importo libero nel carrello.
-            È adattata agli schermi desktop e mobile e non usa la tastiera del dispositivo.
-          </p>
+          <p className="text-xs text-gray-500 mt-1">Mostra sempre la tastiera per l'inserimento dell'importo libero nel carrello.</p>
         </div>
-        <Switch checked={tastieraFissa} disabled={saving} onCheckedChange={toggleTastiera} />
-      </div>
-      <p className="text-[11px] text-gray-400">
-        Disattivando questa opzione tornerà disponibile il pulsante che apre la tastiera in una finestra.
-      </p>
-      <div className="bg-white rounded-xl border p-4 shadow-sm flex items-start gap-3">
-        <div className="w-9 h-9 rounded-lg bg-[#1e3a5f]/10 text-[#1e3a5f] flex items-center justify-center shrink-0">
-          <Ticket className="w-4 h-4" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-gray-800">Mostra pagamento Ticket</p>
-          <p className="text-xs text-gray-500 mt-1">
-            Visualizza o nascondi la tab Ticket nella schermata di pagamento. Disattivala se usi raramente i buoni pasto.
-          </p>
-        </div>
-        <Switch checked={mostraTicket} disabled={saving} onCheckedChange={toggleTicket} />
+        <Switch checked={tastieraFissa} disabled={saving} onCheckedChange={v => toggle({ tastieraFissa: v })} />
       </div>
       <div className="bg-white rounded-xl border p-4 shadow-sm flex items-start gap-3">
-        <div className="w-9 h-9 rounded-lg bg-[#1e3a5f]/10 text-[#1e3a5f] flex items-center justify-center shrink-0">
-          <Banknote className="w-4 h-4" />
-        </div>
+        <div className="w-9 h-9 rounded-lg bg-[#1e3a5f]/10 text-[#1e3a5f] flex items-center justify-center shrink-0"><Banknote className="w-4 h-4" /></div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-gray-800">Gestione resto</p>
-          <p className="text-xs text-gray-500 mt-1">
-            Mostra il campo “Incassato” e calcola il resto per i pagamenti in contanti.
-            Se disattivata, al DCO viene inviato solo il totale effettivo del documento.
-          </p>
+          <p className="text-xs text-gray-500 mt-1">Mostra il campo "Incassato" e calcola il resto per i pagamenti in contanti.</p>
         </div>
-        <Switch checked={gestioneResto} disabled={saving} onCheckedChange={toggleGestioneResto} />
+        <Switch checked={gestioneResto} disabled={saving} onCheckedChange={v => toggle({ gestioneResto: v })} />
       </div>
-      <p className="text-[11px] text-gray-400">
-        Questa opzione è disattivata di default per mantenere il flusso ADE il più semplice possibile.
-      </p>
       <div className="bg-white rounded-xl border p-4 shadow-sm flex items-start gap-3">
-        <div className="w-9 h-9 rounded-lg bg-[#1e3a5f]/10 text-[#1e3a5f] flex items-center justify-center shrink-0">
-          <ListFilter className="w-4 h-4" />
-        </div>
+        <div className="w-9 h-9 rounded-lg bg-[#1e3a5f]/10 text-[#1e3a5f] flex items-center justify-center shrink-0"><ListFilter className="w-4 h-4" /></div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-gray-800">Mostra tipo documento</p>
-          <p className="text-xs text-gray-500 mt-1">
-            Mostra in alto a destra nella cassa il menu per scegliere Vendita/Prestazione, Reso o Annullo.
-            Se disattivata, viene usata automaticamente Vendita/Prestazione.
-          </p>
+          <p className="text-xs text-gray-500 mt-1">Mostra il menu Vendita/Reso/Annullo in alto a destra nella cassa.</p>
         </div>
-        <Switch checked={mostraTipoOperazione} disabled={saving} onCheckedChange={toggleMostraTipoOperazione} />
+        <Switch checked={mostraTipoOperazione} disabled={saving} onCheckedChange={v => toggle({ mostraTipoOperazione: v })} />
+      </div>
+      <div className="bg-white rounded-xl border p-4 shadow-sm flex items-start gap-3">
+        <div className="w-9 h-9 rounded-lg bg-[#1e3a5f]/10 text-[#1e3a5f] flex items-center justify-center shrink-0"><ShoppingCart className="w-4 h-4" /></div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-gray-800">Carrello largo</p>
+          <p className="text-xs text-gray-500 mt-1">Allarga il pannello carrello mobile (96px → 144px). Utile con descrizioni più lunghe.</p>
+        </div>
+        <Switch checked={carrelloLargo} disabled={saving} onCheckedChange={v => toggle({ carrelloLargo: v })} />
       </div>
     </div>
   );
@@ -209,36 +149,58 @@ function GeneraliPanel({ catalog, onRefresh }: { catalog: Catalog; onRefresh: ()
 
 function PagamentoPanel({ catalog, onRefresh }: { catalog: Catalog; onRefresh: () => void }) {
   const [saving, setSaving] = useState(false);
-  const carrelloLargo = catalog.impostazioni?.carrelloLargo ?? false;
+  const imp = catalog.impostazioni;
+  const mostraTicket  = imp?.mostraTicket  ?? false;
+  const nrFattura     = imp?.nrFattura     ?? false;
+  const nrPrestazioni = imp?.nrPrestazioni ?? false;
+  const nrSanitarie   = imp?.nrSanitarie   ?? false;
+  const nrTicketNr    = imp?.nrTicketNr    ?? false;
 
-  const toggleCarrelloLargo = async (checked: boolean) => {
+  const toggle = async (patch: Parameters<typeof updateImpostazioni>[0]) => {
     setSaving(true);
-    try {
-      await updateImpostazioni({ carrelloLargo: checked });
-      onRefresh();
-    } finally {
-      setSaving(false);
-    }
+    try { await updateImpostazioni(patch); onRefresh(); } finally { setSaving(false); }
   };
+
+  const NR_TYPES = [
+    { key: "nrFattura"     as const, label: "Fattura",            desc: "Corrispettivo non riscosso per emissione fattura (NR_EF).", value: nrFattura },
+    { key: "nrPrestazioni" as const, label: "Prestazioni",        desc: "Corrispettivo non riscosso per prestazioni di servizi (NR_PS).", value: nrPrestazioni },
+    { key: "nrSanitarie"   as const, label: "Sanitarie",          desc: "Corrispettivo non riscosso per cessione di bene/sanitarie (NR_CS).", value: nrSanitarie },
+    { key: "nrTicketNr"    as const, label: "Ticket non riscosso",desc: "Pagamento con ticket non ancora riscosso (NR_PS).", value: nrTicketNr },
+  ];
 
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-sm font-semibold text-gray-700">Impostazioni pagamento e carrello</h2>
-        <p className="text-xs text-gray-400 mt-1">Configura la visualizzazione del carrello nella schermata di vendita.</p>
+        <h2 className="text-sm font-semibold text-gray-700">Metodi di pagamento</h2>
+        <p className="text-xs text-gray-400 mt-1">Scegli quali metodi mostrare nella schermata di cassa.</p>
       </div>
+
+      {/* Ticket */}
       <div className="bg-white rounded-xl border p-4 shadow-sm flex items-start gap-3">
-        <div className="w-9 h-9 rounded-lg bg-[#1e3a5f]/10 text-[#1e3a5f] flex items-center justify-center shrink-0">
-          <ShoppingCart className="w-4 h-4" />
-        </div>
+        <div className="w-9 h-9 rounded-lg bg-[#1e3a5f]/10 text-[#1e3a5f] flex items-center justify-center shrink-0"><Ticket className="w-4 h-4" /></div>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-gray-800">Carrello largo</p>
-          <p className="text-xs text-gray-500 mt-1">
-            Allarga il pannello del carrello nella schermata mobile (da 96px a 144px).
-            Utile quando le descrizioni degli articoli sono più lunghe.
-          </p>
+          <p className="text-sm font-semibold text-gray-800">Pagamento Ticket Restaurant</p>
+          <p className="text-xs text-gray-500 mt-1">Mostra la tab Ticket nella schermata di pagamento.</p>
         </div>
-        <Switch checked={carrelloLargo} disabled={saving} onCheckedChange={toggleCarrelloLargo} />
+        <Switch checked={mostraTicket} disabled={saving} onCheckedChange={v => toggle({ mostraTicket: v })} />
+      </div>
+
+      {/* Non riscosso */}
+      <div>
+        <h2 className="text-sm font-semibold text-gray-700 mt-2 mb-2">Corrispettivo non riscosso</h2>
+        <p className="text-xs text-gray-400 mb-3">Abilita i tipi di non riscosso che vuoi mostrare in cassa. Vengono trasmessi ad ADE nei campi NR_EF / NR_PS / NR_CS.</p>
+        <div className="space-y-3">
+          {NR_TYPES.map(({ key, label, desc, value }) => (
+            <div key={key} className="bg-white rounded-xl border p-4 shadow-sm flex items-start gap-3">
+              <div className="w-9 h-9 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center shrink-0 text-base font-bold">NR</div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-gray-800">{label}</p>
+                <p className="text-xs text-gray-500 mt-1">{desc}</p>
+              </div>
+              <Switch checked={value} disabled={saving} onCheckedChange={v => toggle({ [key]: v } as Parameters<typeof updateImpostazioni>[0])} />
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

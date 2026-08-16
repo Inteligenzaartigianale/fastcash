@@ -29,6 +29,7 @@ export const impostazioniTable = pgTable("impostazioni", {
   mostraTicket:     boolean("mostra_ticket").notNull().default(false),
   gestioneResto:    boolean("gestione_resto").notNull().default(false),
   mostraTipoOperazione: boolean("mostra_tipo_operazione").notNull().default(false),
+  carrelloLargo:    boolean("carrello_largo").notNull().default(false),
   dimensioneTasti:  text("dimensione_tasti").notNull().default("S"),
   updatedAt:        timestamp("updated_at").defaultNow().notNull(),
 });

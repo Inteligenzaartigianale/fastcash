@@ -8,7 +8,7 @@ import {
   type Catalog, type Reparto, type Articolo, type AliquotaIva,
   ALIQUOTE_IVA, NATURE_IVA, isNaturaIva,
 } from "@/lib/catalog";
-import { Plus, Pencil, Trash2, Check, Keyboard, Ticket, Banknote, ListFilter } from "lucide-react";
+import { Plus, Pencil, Trash2, Check, Keyboard, Ticket, Banknote, ListFilter, ShoppingCart } from "lucide-react";
 import { BottomNav } from "@/components/bottom-nav";
 import { GuidaChat } from "@/components/guida-chat";
 import { Button } from "@/components/ui/button";
@@ -25,7 +25,7 @@ const IVA_OPTIONS: AliquotaIva[] = ["22", "10", "5", "4", "N1", "N2", "N3", "N4"
 const COLORI = ["#ef4444","#f97316","#eab308","#22c55e","#14b8a6","#3b82f6","#8b5cf6","#ec4899","#6b7280","#1e3a5f"];
 
 export default function AdminPage() {
-  const [tab, setTab] = useState<"guida" | "generali" | "reparti" | "articoli" | "aliquote" | "visualizzazione">("guida");
+  const [tab, setTab] = useState<"guida" | "generali" | "pagamento" | "reparti" | "articoli" | "aliquote" | "visualizzazione">("guida");
   const qc = useQueryClient();
   const { data: catalog, isLoading } = useQuery({ queryKey: ["catalog"], queryFn: fetchCatalog });
   const invalidate = () => qc.invalidateQueries({ queryKey: ["catalog"] });
@@ -50,7 +50,7 @@ export default function AdminPage() {
       </header>
 
       <div className="bg-white border-b px-2 flex gap-0 shrink-0 overflow-x-auto">
-        {(["guida", "generali", "reparti", "articoli", "aliquote", "visualizzazione"] as const).map(t => (
+        {(["guida", "generali", "pagamento", "reparti", "articoli", "aliquote", "visualizzazione"] as const).map(t => (
           <button key={t} onClick={() => setTab(t)}
             className={`px-3 py-3 text-sm font-medium border-b-2 transition-colors capitalize whitespace-nowrap ${tab === t ? "border-[#1e3a5f] text-[#1e3a5f]" : "border-transparent text-gray-500 hover:text-gray-700"}`}
          >{t}</button>
@@ -60,6 +60,7 @@ export default function AdminPage() {
       <div className={`flex-1 overflow-y-auto max-w-2xl w-full mx-auto ${tab === "guida" ? "p-3 flex flex-col" : "p-4"}`}>
          {tab === "guida"    && <GuidaChat />}
          {tab === "generali" && <GeneraliPanel catalog={catalog} onRefresh={invalidate} />}
+         {tab === "pagamento" && <PagamentoPanel catalog={catalog} onRefresh={invalidate} />}
          {tab === "reparti"  && <RepartiPanel  catalog={catalog} onRefresh={invalidate} />}
         {tab === "articoli" && <ArticoliPanel catalog={catalog} onRefresh={invalidate} />}
         {tab === "aliquote" && <AliquotePanel />}
@@ -201,6 +202,43 @@ function GeneraliPanel({ catalog, onRefresh }: { catalog: Catalog; onRefresh: ()
           </p>
         </div>
         <Switch checked={mostraTipoOperazione} disabled={saving} onCheckedChange={toggleMostraTipoOperazione} />
+      </div>
+    </div>
+  );
+}
+
+function PagamentoPanel({ catalog, onRefresh }: { catalog: Catalog; onRefresh: () => void }) {
+  const [saving, setSaving] = useState(false);
+  const carrelloLargo = catalog.impostazioni?.carrelloLargo ?? false;
+
+  const toggleCarrelloLargo = async (checked: boolean) => {
+    setSaving(true);
+    try {
+      await updateImpostazioni({ carrelloLargo: checked });
+      onRefresh();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-sm font-semibold text-gray-700">Impostazioni pagamento e carrello</h2>
+        <p className="text-xs text-gray-400 mt-1">Configura la visualizzazione del carrello nella schermata di vendita.</p>
+      </div>
+      <div className="bg-white rounded-xl border p-4 shadow-sm flex items-start gap-3">
+        <div className="w-9 h-9 rounded-lg bg-[#1e3a5f]/10 text-[#1e3a5f] flex items-center justify-center shrink-0">
+          <ShoppingCart className="w-4 h-4" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-gray-800">Carrello largo</p>
+          <p className="text-xs text-gray-500 mt-1">
+            Allarga il pannello del carrello nella schermata mobile (da 96px a 144px).
+            Utile quando le descrizioni degli articoli sono più lunghe.
+          </p>
+        </div>
+        <Switch checked={carrelloLargo} disabled={saving} onCheckedChange={toggleCarrelloLargo} />
       </div>
     </div>
   );

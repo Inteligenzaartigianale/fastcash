@@ -153,7 +153,7 @@ export default function HomePage() {
   const emptyC: Catalog = {
     reparti: [],
     articoli: [],
-    impostazioni: { importoMassimoDco: null, tastieraFissa: false, mostraTicket: false, gestioneResto: false, mostraTipoOperazione: false, dimensioneTasti: "S" },
+    impostazioni: { importoMassimoDco: null, tastieraFissa: false, mostraTicket: false, gestioneResto: false, mostraTipoOperazione: false, carrelloLargo: false, dimensioneTasti: "S" },
   };
 
   // Navigation
@@ -204,6 +204,7 @@ export default function HomePage() {
   const articoloSize = cat.impostazioni?.dimensioneTasti ?? "S";
   const gestioneResto = cat.impostazioni?.gestioneResto ?? false;
   const mostraTipoOperazione = cat.impostazioni?.mostraTipoOperazione ?? false;
+  const carrelloLargo = cat.impostazioni?.carrelloLargo ?? false;
   const articoloPx = SIZES.find(s => s.label === articoloSize)?.px ?? SIZES[0].px;
 
   const articoliFiltrati = useMemo(() => {
@@ -763,7 +764,7 @@ export default function HomePage() {
         </div>
 
         {/* ── RIGHT: CART PANEL (mobile compact, collassabile) ── */}
-        <div className={`flex md:hidden flex-col bg-white border-l shrink-0 transition-all duration-200 ${cartSidebarOpen ? "w-24" : "w-10"}`}>
+        <div className={`flex md:hidden flex-col bg-white border-l shrink-0 transition-all duration-200 ${cartSidebarOpen ? (carrelloLargo ? "w-36" : "w-24") : "w-10"}`}>
           {cartSidebarOpen ? (
             <MobileCompactCart
               cart={cart}

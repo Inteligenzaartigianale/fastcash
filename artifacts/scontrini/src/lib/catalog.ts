@@ -61,6 +61,7 @@ export interface Impostazioni {
   mostraTicket: boolean;
   gestioneResto: boolean;
   mostraTipoOperazione: boolean;
+  carrelloLargo: boolean;
   dimensioneTasti: "S" | "M" | "L" | "XL" | "XXL";
 }
 

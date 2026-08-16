@@ -26,6 +26,7 @@ router.get("/catalog", async (_req, res): Promise<void> => {
     mostraTicket: false,
     gestioneResto: false,
     mostraTipoOperazione: false,
+    carrelloLargo: false,
     dimensioneTasti: "S",
   };
   res.json({
@@ -41,6 +42,7 @@ router.get("/catalog", async (_req, res): Promise<void> => {
       mostraTicket: settings.mostraTicket,
       gestioneResto: settings.gestioneResto,
       mostraTipoOperazione: settings.mostraTipoOperazione,
+      carrelloLargo: settings.carrelloLargo,
       dimensioneTasti: settings.dimensioneTasti,
     },
   });
@@ -53,6 +55,7 @@ router.put("/catalog/impostazioni", async (req, res): Promise<void> => {
   const mostraTicket = req.body?.mostraTicket;
   const gestioneResto = req.body?.gestioneResto;
   const mostraTipoOperazione = req.body?.mostraTipoOperazione;
+  const carrelloLargo = req.body?.carrelloLargo;
   const dimensioneTasti = req.body?.dimensioneTasti;
   if (value !== null && (!Number.isFinite(value) || value < 0)) {
     res.status(400).json({ error: "L'importo massimo deve essere un numero positivo o vuoto" });
@@ -74,6 +77,10 @@ router.put("/catalog/impostazioni", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Il valore della visualizzazione del tipo documento non è valido" });
     return;
   }
+  if (carrelloLargo !== undefined && typeof carrelloLargo !== "boolean") {
+    res.status(400).json({ error: "Il valore del carrello largo non è valido" });
+    return;
+  }
   if (dimensioneTasti !== undefined && !["S", "M", "L", "XL", "XXL"].includes(dimensioneTasti)) {
     res.status(400).json({ error: "La dimensione dei tasti non è valida" });
     return;
@@ -88,6 +95,7 @@ router.put("/catalog/impostazioni", async (req, res): Promise<void> => {
       mostraTicket: mostraTicket ?? false,
       gestioneResto: gestioneResto ?? false,
       mostraTipoOperazione: mostraTipoOperazione ?? false,
+      carrelloLargo: carrelloLargo ?? false,
       dimensioneTasti: dimensioneTasti ?? "S",
     })
     .onConflictDoUpdate({
@@ -100,6 +108,7 @@ router.put("/catalog/impostazioni", async (req, res): Promise<void> => {
         ...(mostraTicket !== undefined ? { mostraTicket } : {}),
         ...(gestioneResto !== undefined ? { gestioneResto } : {}),
         ...(mostraTipoOperazione !== undefined ? { mostraTipoOperazione } : {}),
+        ...(carrelloLargo !== undefined ? { carrelloLargo } : {}),
         ...(dimensioneTasti !== undefined ? { dimensioneTasti } : {}),
         updatedAt: new Date(),
       },
@@ -111,6 +120,7 @@ router.put("/catalog/impostazioni", async (req, res): Promise<void> => {
     mostraTicket: row.mostraTicket,
     gestioneResto: row.gestioneResto,
     mostraTipoOperazione: row.mostraTipoOperazione,
+    carrelloLargo: row.carrelloLargo,
     dimensioneTasti: row.dimensioneTasti,
   });
 });

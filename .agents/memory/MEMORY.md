@@ -1,1 +1,2 @@
 - [Chromium on Replit NixOS](chromium-nixos.md) — spawn Chrome 92 + puppeteer.connect() to bypass launch timeout; nix Chromium path via nix-instantiate
+- [ADE API scope](ade-api-scope.md) — keep the current DCO flow unchanged; official REST APIs are a separate future project

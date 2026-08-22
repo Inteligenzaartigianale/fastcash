@@ -80,7 +80,7 @@ async function api<T>(method: string, path: string, body?: unknown): Promise<T> 
   const res = await fetch(`${base}/api${path}`, {
     method,
     headers: {
-      ...getAuthHeaders(),
+      ...(await getAuthHeaders()),
       ...(body ? { "Content-Type": "application/json" } : {}),
     },
     body: body ? JSON.stringify(body) : undefined,

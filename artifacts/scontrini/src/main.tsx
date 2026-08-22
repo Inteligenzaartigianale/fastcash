@@ -1,7 +1,8 @@
 import { createRoot } from "react-dom/client";
-import { setBaseUrl, setAuthTokenGetter } from "@workspace/api-client-react";
+import { setBaseUrl, setAuthTokenGetter, setRequestHeaderGetter } from "@workspace/api-client-react";
 import { isCapacitor, getApiBase, getDeviceToken } from "./lib/capacitor";
 import { getDesktopToken, fetchDesktopToken } from "./lib/auth-token";
+import { getDeviceHeaders } from "./lib/device-identity";
 import App from "./App";
 import "./index.css";
 
@@ -25,5 +26,9 @@ if (isCapacitor) {
     return fetchDesktopToken();
   });
 }
+
+// The commercial license is tied to this installation, independently from the
+// login token used for ADE/browser pairing.
+setRequestHeaderGetter(() => getDeviceHeaders());
 
 createRoot(document.getElementById("root")!).render(<App />);

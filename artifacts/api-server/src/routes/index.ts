@@ -5,6 +5,7 @@ import aeRouter from "./ae";
 import catalogRouter from "./catalog";
 import documentiRouter from "./documenti";
 import chatRouter from "./chat";
+import licenseRouter from "./license";
 import { requireDeviceToken } from "../lib/device-auth.js";
 
 const router: IRouter = Router();
@@ -22,5 +23,6 @@ router.use(requireDeviceToken, aeRouter);
 router.use(requireDeviceToken, catalogRouter);
 router.use(requireDeviceToken, documentiRouter);
 router.use(requireDeviceToken, chatRouter);
+router.use(requireDeviceToken, licenseRouter);
 
 export default router;

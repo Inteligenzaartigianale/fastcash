@@ -1,4 +1,4 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request, type Response } from "express";
 import { eq, sql } from "drizzle-orm";
 import { db, documentiTable, impostazioniTable } from "@workspace/db";
 import { clearSession, getSession, isSessionValid, setSession } from "../lib/session.js";
@@ -10,6 +10,7 @@ import {
 } from "@workspace/api-zod";
 import { logger } from "../lib/logger.js";
 import { randomUUID } from "node:crypto";
+import { getLicenseStatus, makeDeviceIdentity } from "../lib/licensing.js";
 
 const router: IRouter = Router();
 
@@ -91,6 +92,32 @@ async function requireSession(): Promise<string> {
   }
 
   return session.cookies;
+}
+
+async function requireFiscalLicense(req: Request, res: Response): Promise<boolean> {
+  const session = getSession();
+  const device = makeDeviceIdentity({
+    deviceId: req.header("x-scontrini-device-id"),
+    publicKey: req.header("x-scontrini-device-key"),
+    issuedAt: req.header("x-scontrini-device-issued-at"),
+    nonce: req.header("x-scontrini-device-nonce"),
+    signature: req.header("x-scontrini-device-signature"),
+    platform: req.header("x-scontrini-device-platform"),
+    displayName: req.header("x-scontrini-device-name"),
+  });
+  if (!session?.partitaIva || !device) {
+    res.status(402).json({
+      error: "Licenza non verificabile. Aggiorna l’app e riconnetti la sessione ADE.",
+      code: "license_context_missing",
+    });
+    return false;
+  }
+  const status = await getLicenseStatus(session.partitaIva, device);
+  if (!status.canEmit) {
+    res.status(402).json({ error: status.message, code: status.state, license: status });
+    return false;
+  }
+  return true;
 }
 
 async function aeGet(
@@ -275,6 +302,7 @@ router.post("/ae/documenti", async (req, res): Promise<void> => {
     res.status(401).json({ error: "Non autenticato. Effettua il login." });
     return;
   }
+  if (!(await requireFiscalLicense(req, res))) return;
 
   const parsed = InviaDocumentoBody.safeParse(req.body);
   if (!parsed.success) {
@@ -456,6 +484,7 @@ router.post("/documenti/:id/annulla", async (req, res): Promise<void> => {
     res.status(401).json({ error: "Non autenticato. Effettua il login." });
     return;
   }
+  if (!(await requireFiscalLicense(req, res))) return;
 
   const [originale] = await db
     .select()

@@ -129,7 +129,7 @@ export default function GuidaPage() {
     try {
       const res = await fetch(`${BASE}/api/chat`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        headers: { "Content-Type": "application/json", ...(await getAuthHeaders()) },
         body: JSON.stringify({
           messages: newMessages.map((m) => ({ role: m.role, content: m.content })),
         }),

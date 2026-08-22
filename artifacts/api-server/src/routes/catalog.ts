@@ -22,7 +22,7 @@ router.get("/catalog", async (_req, res): Promise<void> => {
   const settings = settingsRows[0] ?? {
     id: "default",
     importoMassimoDco: null,
-    tastieraFissa: false,
+    tastieraFissa: true,
     mostraTicket: false,
     gestioneResto: false,
     mostraTipoOperazione: false,
@@ -109,7 +109,7 @@ router.put("/catalog/impostazioni", async (req, res): Promise<void> => {
     .values({
       id: "default",
       importoMassimoDco: value === null ? null : value.toFixed(2),
-      tastieraFissa: tastieraFissa ?? false,
+       tastieraFissa: true,
       mostraTicket: mostraTicket ?? false,
       gestioneResto: gestioneResto ?? false,
       mostraTipoOperazione: mostraTipoOperazione ?? false,
@@ -126,7 +126,7 @@ router.put("/catalog/impostazioni", async (req, res): Promise<void> => {
         ...(req.body?.importoMassimoDco !== undefined
           ? { importoMassimoDco: value === null ? null : value.toFixed(2) }
           : {}),
-        ...(tastieraFissa !== undefined ? { tastieraFissa } : {}),
+         tastieraFissa: true,
         ...(mostraTicket !== undefined ? { mostraTicket } : {}),
         ...(gestioneResto !== undefined ? { gestioneResto } : {}),
         ...(mostraTipoOperazione !== undefined ? { mostraTipoOperazione } : {}),

@@ -10,6 +10,7 @@
  */
 
 import { isCapacitor, getDeviceToken, getApiBase } from "./capacitor";
+import { getDeviceHeaders } from "./device-identity";
 
 // In-memory cache for the desktop token (lost on page reload → re-fetched lazily)
 let _desktopToken: string | null = null;
@@ -46,7 +47,10 @@ export async function fetchDesktopToken(): Promise<string | null> {
 }
 
 /** Authorization headers for manual fetch() calls that bypass the generated client. */
-export function getAuthHeaders(): Record<string, string> {
+export async function getAuthHeaders(): Promise<Record<string, string>> {
   const token = getCurrentToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  return {
+    ...(await getDeviceHeaders()),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
 }

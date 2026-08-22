@@ -153,7 +153,7 @@ export default function HomePage() {
   const emptyC: Catalog = {
     reparti: [],
     articoli: [],
-    impostazioni: { importoMassimoDco: null, tastieraFissa: false, mostraTicket: false, gestioneResto: false, mostraTipoOperazione: false, carrelloLargo: false, nrFattura: false, nrPrestazioni: false, nrSanitarie: false, nrTicketNr: false, dimensioneTasti: "S" },
+    impostazioni: { importoMassimoDco: null, tastieraFissa: true, mostraTicket: false, gestioneResto: false, mostraTipoOperazione: false, carrelloLargo: false, nrFattura: false, nrPrestazioni: false, nrSanitarie: false, nrTicketNr: false, dimensioneTasti: "S" },
   };
 
   // Navigation
@@ -310,7 +310,7 @@ export default function HomePage() {
 
     // Tastiera fissa: importo → articolo/reparto → pagamento.
     // Reparto e IVA arrivano dall'articolo toccato, senza selezioni duplicate.
-    if (cat.impostazioni?.tastieraFissa && cart.length === 0 && Number.isFinite(amount) && amount > 0) {
+    if (cart.length === 0 && Number.isFinite(amount) && amount > 0) {
       setCart(prev => [...prev, {
         articoloId: "",
         nome: `Importo libero · ${art.nome}`,
@@ -342,7 +342,7 @@ export default function HomePage() {
         omaggio: false,
       }];
     });
-  }, [cat.impostazioni?.tastieraFissa, fixedAmountText, cart.length]);
+  }, [fixedAmountText, cart.length]);
 
   const handleArticoloClick = useCallback((art: Articolo) => {
     if (art.prezzoUnitario === 0) {
@@ -854,7 +854,7 @@ export default function HomePage() {
             onSubmit={handleSubmit}
             isPending={inviaMutation.isPending}
             reparti={cat.reparti}
-            tastieraFissa={cat.impostazioni?.tastieraFissa ?? false}
+            tastieraFissa
             fixedAmountText={fixedAmountText}
             onFixedAmountTextChange={handleFixedAmountTextChange}
             mostraTicket={cat.impostazioni?.mostraTicket ?? false}

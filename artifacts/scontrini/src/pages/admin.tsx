@@ -18,6 +18,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Label } from "@/components/ui/label";
 import { CurrencyInput } from "@/components/currency-input";
 import { Switch } from "@/components/ui/switch";
+import { LicensePanel } from "@/components/license-panel";
 
 import { SIZES } from "@/lib/articolo-size";
 
@@ -25,7 +26,7 @@ const IVA_OPTIONS: AliquotaIva[] = ["22", "10", "5", "4", "N1", "N2", "N3", "N4"
 const COLORI = ["#ef4444","#f97316","#eab308","#22c55e","#14b8a6","#3b82f6","#8b5cf6","#ec4899","#6b7280","#1e3a5f"];
 
 export default function AdminPage() {
-  const [tab, setTab] = useState<"guida" | "generali" | "pagamento" | "reparti" | "articoli" | "aliquote" | "visualizzazione">("guida");
+  const [tab, setTab] = useState<"guida" | "licenza" | "generali" | "pagamento" | "reparti" | "articoli" | "aliquote" | "visualizzazione">("guida");
   const qc = useQueryClient();
   const { data: catalog, isLoading } = useQuery({ queryKey: ["catalog"], queryFn: fetchCatalog });
   const invalidate = () => qc.invalidateQueries({ queryKey: ["catalog"] });
@@ -50,7 +51,7 @@ export default function AdminPage() {
       </header>
 
       <div className="bg-white border-b px-2 flex gap-0 shrink-0 overflow-x-auto">
-        {(["guida", "generali", "pagamento", "reparti", "articoli", "aliquote", "visualizzazione"] as const).map(t => (
+        {(["guida", "licenza", "generali", "pagamento", "reparti", "articoli", "aliquote", "visualizzazione"] as const).map(t => (
           <button key={t} onClick={() => setTab(t)}
             className={`px-3 py-3 text-sm font-medium border-b-2 transition-colors capitalize whitespace-nowrap ${tab === t ? "border-[#1e3a5f] text-[#1e3a5f]" : "border-transparent text-gray-500 hover:text-gray-700"}`}
          >{t}</button>
@@ -59,6 +60,7 @@ export default function AdminPage() {
 
       <div className={`flex-1 overflow-y-auto max-w-2xl w-full mx-auto ${tab === "guida" ? "p-3 flex flex-col" : "p-4"}`}>
          {tab === "guida"    && <GuidaChat />}
+         {tab === "licenza" && <LicensePanel />}
          {tab === "generali" && <GeneraliPanel catalog={catalog} onRefresh={invalidate} />}
          {tab === "pagamento" && <PagamentoPanel catalog={catalog} onRefresh={invalidate} />}
          {tab === "reparti"  && <RepartiPanel  catalog={catalog} onRefresh={invalidate} />}
@@ -95,7 +97,6 @@ export default function AdminPage() {
 
 function GeneraliPanel({ catalog, onRefresh }: { catalog: Catalog; onRefresh: () => void }) {
   const [saving, setSaving] = useState(false);
-  const tastieraFissa = catalog.impostazioni?.tastieraFissa ?? false;
   const gestioneResto = catalog.impostazioni?.gestioneResto ?? false;
   const mostraTipoOperazione = catalog.impostazioni?.mostraTipoOperazione ?? false;
   const carrelloLargo = catalog.impostazioni?.carrelloLargo ?? false;
@@ -111,13 +112,12 @@ function GeneraliPanel({ catalog, onRefresh }: { catalog: Catalog; onRefresh: ()
         <h2 className="text-sm font-semibold text-gray-700">Impostazioni generali</h2>
         <p className="text-xs text-gray-400 mt-1">Personalizza il comportamento della schermata di vendita.</p>
       </div>
-      <div className="bg-white rounded-xl border p-4 shadow-sm flex items-start gap-3">
+      <div className="bg-slate-50 rounded-xl border p-4 flex items-start gap-3">
         <div className="w-9 h-9 rounded-lg bg-[#1e3a5f]/10 text-[#1e3a5f] flex items-center justify-center shrink-0"><Keyboard className="w-4 h-4" /></div>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-gray-800">Tastiera numerica fissa</p>
-          <p className="text-xs text-gray-500 mt-1">Mostra sempre la tastiera per l'inserimento dell'importo libero nel carrello.</p>
+          <p className="text-sm font-semibold text-gray-800">Tastiera numerica sempre attiva</p>
+          <p className="text-xs text-gray-500 mt-1">La tastiera per l’importo libero resta fissa nella cassa per rendere l’uso più rapido su touchscreen.</p>
         </div>
-        <Switch checked={tastieraFissa} disabled={saving} onCheckedChange={v => toggle({ tastieraFissa: v })} />
       </div>
       <div className="bg-white rounded-xl border p-4 shadow-sm flex items-start gap-3">
         <div className="w-9 h-9 rounded-lg bg-[#1e3a5f]/10 text-[#1e3a5f] flex items-center justify-center shrink-0"><Banknote className="w-4 h-4" /></div>

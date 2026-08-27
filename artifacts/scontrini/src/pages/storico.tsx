@@ -81,6 +81,8 @@ export default function StoricoPage() {
 
   return (
     <div className="flex h-[100dvh] flex-col bg-gray-50">
+      <BottomNav />
+
       <header className="flex shrink-0 items-center gap-3 bg-[#1e3a5f] px-4 py-3 text-white shadow">
         <button type="button" onClick={() => setLocation("/")} className="rounded-md p-1 hover:bg-white/10" aria-label="Torna alla vendita">
           <ArrowLeft className="h-5 w-5" />
@@ -144,7 +146,6 @@ export default function StoricoPage() {
           )}
         </section>
       </main>
-      <BottomNav />
     </div>
   );
 }

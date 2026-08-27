@@ -532,6 +532,7 @@ export default function HomePage() {
 
   return (
     <div className="h-[100dvh] flex flex-col bg-gray-100 overflow-hidden" style={{ paddingBottom: 0 }}>
+      <BottomNav />
 
       {/* ── BANNER sessione scaduta ── */}
       {meError && !extensionConnected && (
@@ -982,7 +983,6 @@ export default function HomePage() {
         />
       )}
 
-      <BottomNav />
     </div>
   );
 }

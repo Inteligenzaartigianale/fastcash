@@ -46,6 +46,8 @@ export default function AdminPage() {
 
   return (
     <div className="h-[100dvh] flex flex-col bg-gray-50">
+      <BottomNav />
+
       <header className="bg-[#1e3a5f] text-white px-4 py-3 flex items-center gap-3 shrink-0 shadow">
         <h1 className="font-bold text-base">⚙️ Impostazioni</h1>
       </header>
@@ -90,7 +92,6 @@ export default function AdminPage() {
         )}
       </div>
 
-      <BottomNav />
     </div>
   );
 }

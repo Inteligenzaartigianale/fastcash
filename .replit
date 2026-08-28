@@ -26,3 +26,15 @@ channel = "stable-25_05"
 
 [userenv.shared]
 APP_URL = "https://link-sender-vignolinifederi.replit.app/"
+
+[[ports]]
+localPort = 8080
+externalPort = 8080
+
+[[ports]]
+localPort = 8081
+externalPort = 80
+
+[[ports]]
+localPort = 23376
+externalPort = 3000

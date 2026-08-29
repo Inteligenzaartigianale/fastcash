@@ -40,6 +40,7 @@ export default function AdminPage() {
   }
 
   const size = catalog.impostazioni?.dimensioneTasti ?? "S";
+  const mostraScorta = catalog.impostazioni?.mostraScorta ?? true;
   const setSize = (value: typeof size) => {
     updateImpostazioni({ dimensioneTasti: value }).then(invalidate);
   };
@@ -87,6 +88,14 @@ export default function AdminPage() {
                 ))}
               </div>
               <p className="text-xs text-gray-400 mt-3">La dimensione viene salvata automaticamente e applicata alla schermata di vendita.</p>
+            </div>
+            <div className="bg-white rounded-xl border p-4 shadow-sm flex items-start gap-3">
+              <div className="w-9 h-9 rounded-lg bg-[#1e3a5f]/10 text-[#1e3a5f] flex items-center justify-center shrink-0"><ListFilter className="w-4 h-4" /></div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-gray-800">Mostra scorta sulle tessere</p>
+                <p className="text-xs text-gray-500 mt-1">Se attiva, mostra la quantità disponibile. La dicitura non compare quando la quantità è zero.</p>
+              </div>
+              <Switch checked={mostraScorta} onCheckedChange={v => updateImpostazioni({ mostraScorta: v }).then(invalidate)} />
             </div>
           </div>
         )}

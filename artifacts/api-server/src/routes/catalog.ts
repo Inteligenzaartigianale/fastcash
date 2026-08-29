@@ -31,6 +31,7 @@ router.get("/catalog", async (_req, res): Promise<void> => {
     nrPrestazioni: false,
     nrSanitarie: false,
     nrTicketNr: false,
+    mostraScorta: true,
     dimensioneTasti: "S",
   };
   res.json({
@@ -51,6 +52,7 @@ router.get("/catalog", async (_req, res): Promise<void> => {
       nrPrestazioni: settings.nrPrestazioni,
       nrSanitarie: settings.nrSanitarie,
       nrTicketNr: settings.nrTicketNr,
+      mostraScorta: settings.mostraScorta,
       dimensioneTasti: settings.dimensioneTasti,
     },
   });
@@ -68,6 +70,7 @@ router.put("/catalog/impostazioni", async (req, res): Promise<void> => {
   const nrPrestazioni = req.body?.nrPrestazioni;
   const nrSanitarie = req.body?.nrSanitarie;
   const nrTicketNr = req.body?.nrTicketNr;
+  const mostraScorta = req.body?.mostraScorta;
   const dimensioneTasti = req.body?.dimensioneTasti;
   if (value !== null && (!Number.isFinite(value) || value < 0)) {
     res.status(400).json({ error: "L'importo massimo deve essere un numero positivo o vuoto" });
@@ -99,6 +102,10 @@ router.put("/catalog/impostazioni", async (req, res): Promise<void> => {
       return;
     }
   }
+  if (mostraScorta !== undefined && typeof mostraScorta !== "boolean") {
+    res.status(400).json({ error: "Il valore della visualizzazione della scorta non è valido" });
+    return;
+  }
   if (dimensioneTasti !== undefined && !["S", "M", "L", "XL", "XXL"].includes(dimensioneTasti)) {
     res.status(400).json({ error: "La dimensione dei tasti non è valida" });
     return;
@@ -118,6 +125,7 @@ router.put("/catalog/impostazioni", async (req, res): Promise<void> => {
       nrPrestazioni: nrPrestazioni ?? false,
       nrSanitarie: nrSanitarie ?? false,
       nrTicketNr: nrTicketNr ?? false,
+      mostraScorta: mostraScorta ?? true,
       dimensioneTasti: dimensioneTasti ?? "S",
     })
     .onConflictDoUpdate({
@@ -135,6 +143,7 @@ router.put("/catalog/impostazioni", async (req, res): Promise<void> => {
         ...(nrPrestazioni !== undefined ? { nrPrestazioni } : {}),
         ...(nrSanitarie !== undefined ? { nrSanitarie } : {}),
         ...(nrTicketNr !== undefined ? { nrTicketNr } : {}),
+        ...(mostraScorta !== undefined ? { mostraScorta } : {}),
         ...(dimensioneTasti !== undefined ? { dimensioneTasti } : {}),
         updatedAt: new Date(),
       },
@@ -151,6 +160,7 @@ router.put("/catalog/impostazioni", async (req, res): Promise<void> => {
     nrPrestazioni: row.nrPrestazioni,
     nrSanitarie: row.nrSanitarie,
     nrTicketNr: row.nrTicketNr,
+    mostraScorta: row.mostraScorta,
     dimensioneTasti: row.dimensioneTasti,
   });
 });

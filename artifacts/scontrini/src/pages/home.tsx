@@ -153,7 +153,7 @@ export default function HomePage() {
   const emptyC: Catalog = {
     reparti: [],
     articoli: [],
-    impostazioni: { importoMassimoDco: null, tastieraFissa: true, mostraTicket: false, gestioneResto: false, mostraTipoOperazione: false, carrelloLargo: false, nrFattura: false, nrPrestazioni: false, nrSanitarie: false, nrTicketNr: false, dimensioneTasti: "S" },
+    impostazioni: { importoMassimoDco: null, tastieraFissa: true, mostraTicket: false, gestioneResto: false, mostraTipoOperazione: false, carrelloLargo: false, nrFattura: false, nrPrestazioni: false, nrSanitarie: false, nrTicketNr: false, mostraScorta: true, dimensioneTasti: "S" },
   };
 
   // Navigation
@@ -205,6 +205,7 @@ export default function HomePage() {
   const articoloSize = cat.impostazioni?.dimensioneTasti ?? "S";
   const gestioneResto = cat.impostazioni?.gestioneResto ?? false;
   const mostraTipoOperazione = cat.impostazioni?.mostraTipoOperazione ?? false;
+  const mostraScorta = cat.impostazioni?.mostraScorta ?? true;
   const nrFattura     = cat.impostazioni?.nrFattura     ?? false;
   const nrPrestazioni = cat.impostazioni?.nrPrestazioni ?? false;
   const nrSanitarie   = cat.impostazioni?.nrSanitarie   ?? false;
@@ -735,7 +736,7 @@ export default function HomePage() {
 
           <div className="relative min-h-0 flex-1 overflow-hidden">
             {/* Articoli grid */}
-            <div className="h-full overflow-y-auto p-3 pb-24 md:pb-3">
+            <div className={`h-full overflow-y-auto p-3 md:pb-3 ${cartSidebarOpen ? "pr-[38%]" : "pr-12"}`}>
               {articoliFiltrati.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center text-gray-400 gap-2">
                   <p className="text-sm">Nessun articolo</p>
@@ -748,7 +749,13 @@ export default function HomePage() {
                     const colore = rep?.colore ?? "#6b7280";
                     const giacenza = art.giacenza ?? 0;
                     const soglia = art.sogliaSottoscorta ?? 0;
-                    const statoScorta = giacenza <= 0 ? "esaurito" : giacenza <= soglia ? "sottoscorta" : "disponibile";
+                    const statoScorta = !mostraScorta
+                      ? "disponibile"
+                      : giacenza <= 0
+                        ? "esaurito"
+                        : giacenza <= soglia
+                          ? "sottoscorta"
+                          : "disponibile";
                     const bordoScorta = statoScorta === "esaurito"
                       ? "#ef4444"
                       : statoScorta === "sottoscorta"
@@ -759,7 +766,7 @@ export default function HomePage() {
                         key={art.id}
                         onClick={() => handleArticoloClick(art)}
                         className="bg-white rounded-xl p-2 text-left shadow-sm border-2 hover:shadow-md active:scale-95 transition-all flex flex-col justify-between shrink-0"
-                        title={`${art.nome} · scorta: ${giacenza} · venduti: ${art.pezziVenduti ?? 0}`}
+                        title={`${art.nome}${mostraScorta ? ` · scorta: ${giacenza}` : ""} · venduti: ${art.pezziVenduti ?? 0}`}
                         style={{
                           width: articoloPx,
                           height: articoloPx,
@@ -771,9 +778,11 @@ export default function HomePage() {
                         <div>
                           <p className="text-base font-bold text-gray-900">€ {art.prezzoUnitario.toFixed(2)}</p>
                           <span className="text-[9px] text-gray-400 font-mono">{isNaturaIva(art.aliquotaIva) ? `0% · ${art.aliquotaIva}` : `${art.aliquotaIva}%`}</span>
-                          <span className={`block text-[9px] font-mono font-semibold ${statoScorta === "esaurito" ? "text-red-600" : statoScorta === "sottoscorta" ? "text-orange-600" : "text-gray-400"}`}>
-                            Scorta {giacenza}
-                          </span>
+                          {mostraScorta && giacenza > 0 && (
+                            <span className={`block truncate text-[9px] font-mono font-semibold ${statoScorta === "sottoscorta" ? "text-orange-600" : "text-gray-400"}`}>
+                              Scorta {giacenza}
+                            </span>
+                          )}
                         </div>
                       </button>
                     );
@@ -782,10 +791,10 @@ export default function HomePage() {
               )}
             </div>
 
-            {/* ── MOBILE CART: bottom tray, always below the department bar ── */}
+            {/* ── MOBILE CART: fixed right sidebar, always below the department bar ── */}
             <div
-              className={`absolute inset-x-0 bottom-0 z-20 overflow-hidden border-t border-[#1e3a5f]/20 bg-white shadow-[0_-8px_24px_rgba(30,58,95,0.16)] transition-[height] duration-200 ${
-                cartSidebarOpen ? "h-full" : "h-[28%] min-h-[112px] max-h-[220px]"
+              className={`absolute right-0 top-0 bottom-0 z-20 flex flex-col overflow-hidden border-l border-[#1e3a5f]/20 bg-white shadow-[-8px_0_24px_rgba(30,58,95,0.16)] transition-[width] duration-200 ${
+                cartSidebarOpen ? "w-[34%] min-w-[128px]" : "w-10"
               }`}
             >
               {cartSidebarOpen ? (
@@ -800,8 +809,8 @@ export default function HomePage() {
                   onClear={clearCart}
                   onSubmit={handleSubmit}
                   isPending={inviaMutation.isPending}
-                  cartExpanded={true}
-                  onToggleExpand={() => undefined}
+                  cartExpanded={cartExpanded}
+                  onToggleExpand={() => setCartExpanded(v => !v)}
                   onLongPressItem={(idx) => setCartActionIdx(idx)}
                   onLongPressTotal={() => setShowDiscountDialog(true)}
                   onRemoveDiscount={() => setCartDiscount(null)}
@@ -814,48 +823,24 @@ export default function HomePage() {
                 <button
                   type="button"
                   aria-label="Apri il carrello"
-                  className="flex h-full w-full flex-col text-left active:bg-blue-50"
+                  className="flex h-full w-full flex-col items-center gap-1 px-1 pt-3 active:bg-gray-50"
                   onClick={() => {
                     setCartSidebarOpen(true);
-                    setCartExpanded(true);
                   }}
                 >
-                  <div className="flex shrink-0 items-center justify-between border-b bg-gray-50 px-3 py-2">
-                    <span className="flex items-center gap-1.5 text-xs font-bold text-[#1e3a5f]">
-                      <ShoppingCart className="h-4 w-4" />
-                      Carrello
-                      <span className="rounded-full bg-[#1e3a5f] px-1.5 py-0.5 text-[10px] text-white">
+                  <div className="relative">
+                    <ShoppingCart className="h-5 w-5 text-gray-500" />
+                    {cart.length > 0 && (
+                      <span className="absolute -top-1.5 -right-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[#1e3a5f] text-[8px] font-bold text-white">
                         {cart.reduce((s, i) => s + i.quantita, 0)}
                       </span>
-                    </span>
-                    <span className="text-[10px] font-semibold text-[#1e3a5f]">Tocca per aprire ↑</span>
-                  </div>
-                  <div className="min-h-0 flex-1 overflow-hidden">
-                    {cart.length === 0 ? (
-                      <p className="px-3 py-3 text-xs text-gray-400">Tocca un articolo per iniziare la vendita.</p>
-                    ) : (
-                      <div className="divide-y">
-                        {cart.slice(0, 2).map((item, idx) => (
-                          <div key={idx} className="flex items-center justify-between gap-3 px-3 py-2">
-                            <div className="min-w-0">
-                              <p className="truncate text-sm font-semibold text-gray-800">{item.nome}</p>
-                              <p className="text-xs text-gray-400">€{item.prezzoUnitario.toFixed(2)} × {item.quantita}</p>
-                            </div>
-                            <span className="shrink-0 font-mono text-sm font-bold text-[#1e3a5f]">
-                              €{formatCurrency(itemTotale(item))}
-                            </span>
-                          </div>
-                        ))}
-                        {cart.length > 2 && (
-                          <p className="px-3 py-1 text-center text-[10px] text-gray-400">+ altri {cart.length - 2} articoli</p>
-                        )}
-                      </div>
                     )}
                   </div>
-                  <div className="flex shrink-0 items-center justify-between border-t bg-gray-50 px-3 py-2">
-                    <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Totale</span>
-                    <span className="font-mono text-lg font-bold text-gray-900">€ {formatCurrency(totaleConSconto)}</span>
-                  </div>
+                  {cart.length > 0 && (
+                    <span className="text-[8px] font-bold text-[#1e3a5f] font-mono" style={{ writingMode: "vertical-rl", textOrientation: "mixed" }}>
+                      €{formatCurrency(totaleConSconto)}
+                    </span>
+                  )}
                 </button>
               )}
             </div>

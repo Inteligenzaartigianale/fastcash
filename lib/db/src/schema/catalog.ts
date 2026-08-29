@@ -34,6 +34,7 @@ export const impostazioniTable = pgTable("impostazioni", {
   nrPrestazioni:    boolean("nr_prestazioni").notNull().default(false),
   nrSanitarie:      boolean("nr_sanitarie").notNull().default(false),
   nrTicketNr:       boolean("nr_ticket_nr").notNull().default(false),
+  mostraScorta:     boolean("mostra_scorta").notNull().default(true),
   dimensioneTasti:  text("dimensione_tasti").notNull().default("S"),
   updatedAt:        timestamp("updated_at").defaultNow().notNull(),
 });

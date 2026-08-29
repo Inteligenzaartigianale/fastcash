@@ -66,6 +66,7 @@ export interface Impostazioni {
   nrPrestazioni: boolean;
   nrSanitarie: boolean;
   nrTicketNr: boolean;
+  mostraScorta: boolean;
   dimensioneTasti: "S" | "M" | "L" | "XL" | "XXL";
 }
 

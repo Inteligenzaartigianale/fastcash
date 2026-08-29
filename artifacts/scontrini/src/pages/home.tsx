@@ -736,7 +736,7 @@ export default function HomePage() {
 
           <div className="relative min-h-0 flex-1 overflow-hidden">
             {/* Articoli grid */}
-            <div className={`h-full overflow-y-auto p-3 md:pb-3 ${cartSidebarOpen ? "pr-[38%]" : "pr-12"}`}>
+            <div className="h-full overflow-y-auto p-3 md:pb-3 pr-[38%]">
               {articoliFiltrati.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center text-gray-400 gap-2">
                   <p className="text-sm">Nessun articolo</p>
@@ -756,6 +756,7 @@ export default function HomePage() {
                         : giacenza <= soglia
                           ? "sottoscorta"
                           : "disponibile";
+                    const tileIsSmall = articoloPx <= 112;
                     const bordoScorta = statoScorta === "esaurito"
                       ? "#ef4444"
                       : statoScorta === "sottoscorta"
@@ -765,7 +766,7 @@ export default function HomePage() {
                       <button
                         key={art.id}
                         onClick={() => handleArticoloClick(art)}
-                        className="bg-white rounded-xl p-2 text-left shadow-sm border-2 hover:shadow-md active:scale-95 transition-all flex flex-col justify-between shrink-0"
+                        className={`overflow-hidden bg-white rounded-xl text-left shadow-sm border-2 hover:shadow-md active:scale-95 transition-all flex min-h-0 flex-col justify-between shrink-0 ${tileIsSmall ? "p-1.5" : "p-2"}`}
                         title={`${art.nome}${mostraScorta ? ` · scorta: ${giacenza}` : ""} · venduti: ${art.pezziVenduti ?? 0}`}
                         style={{
                           width: articoloPx,
@@ -774,12 +775,12 @@ export default function HomePage() {
                           backgroundColor: statoScorta === "esaurito" ? "#fef2f2" : statoScorta === "sottoscorta" ? "#fff7ed" : colore + "0d",
                         }}
                       >
-                        <p className="text-xs font-semibold text-gray-800 leading-tight line-clamp-3">{art.nome}</p>
-                        <div>
-                          <p className="text-base font-bold text-gray-900">€ {art.prezzoUnitario.toFixed(2)}</p>
-                          <span className="text-[9px] text-gray-400 font-mono">{isNaturaIva(art.aliquotaIva) ? `0% · ${art.aliquotaIva}` : `${art.aliquotaIva}%`}</span>
+                        <p className={`min-h-0 overflow-hidden font-semibold text-gray-800 leading-tight ${tileIsSmall ? "text-[10px] line-clamp-2" : "text-xs line-clamp-3"}`}>{art.nome}</p>
+                        <div className="min-h-0 overflow-hidden">
+                          <p className={`truncate font-bold text-gray-900 ${tileIsSmall ? "text-sm" : "text-base"}`}>€ {art.prezzoUnitario.toFixed(2)}</p>
+                          <span className={`block truncate text-gray-400 font-mono ${tileIsSmall ? "text-[8px]" : "text-[9px]"}`}>{isNaturaIva(art.aliquotaIva) ? `0% · ${art.aliquotaIva}` : `${art.aliquotaIva}%`}</span>
                           {mostraScorta && giacenza > 0 && (
-                            <span className={`block truncate text-[9px] font-mono font-semibold ${statoScorta === "sottoscorta" ? "text-orange-600" : "text-gray-400"}`}>
+                            <span className={`block truncate font-mono font-semibold ${tileIsSmall ? "text-[8px]" : "text-[9px]"} ${statoScorta === "sottoscorta" ? "text-orange-600" : "text-gray-400"}`}>
                               Scorta {giacenza}
                             </span>
                           )}
@@ -792,57 +793,65 @@ export default function HomePage() {
             </div>
 
             {/* ── MOBILE CART: fixed right sidebar, always below the department bar ── */}
-            <div
-              className={`absolute right-0 top-0 bottom-0 z-20 flex flex-col overflow-hidden border-l border-[#1e3a5f]/20 bg-white shadow-[-8px_0_24px_rgba(30,58,95,0.16)] transition-[width] duration-200 ${
-                cartSidebarOpen ? "w-[34%] min-w-[128px]" : "w-10"
-              }`}
-            >
-              {cartSidebarOpen ? (
-                <MobileCompactCart
-                  cart={cart}
-                  totals={totals}
-                  totaleConSconto={totaleConSconto}
-                  discountAmount={discountAmount}
-                  cartDiscount={cartDiscount}
-                  modoPagamento={modoPagamento}
-                  setModoPagamento={selectPaymentMode}
-                  onClear={clearCart}
-                  onSubmit={handleSubmit}
-                  isPending={inviaMutation.isPending}
-                  cartExpanded={cartExpanded}
-                  onToggleExpand={() => setCartExpanded(v => !v)}
-                  onLongPressItem={(idx) => setCartActionIdx(idx)}
-                  onLongPressTotal={() => setShowDiscountDialog(true)}
-                  onRemoveDiscount={() => setCartDiscount(null)}
-                  onCollapse={() => {
-                    setCartSidebarOpen(false);
-                    setCartExpanded(false);
-                  }}
-                />
-              ) : (
-                <button
-                  type="button"
-                  aria-label="Apri il carrello"
-                  className="flex h-full w-full flex-col items-center gap-1 px-1 pt-3 active:bg-gray-50"
-                  onClick={() => {
-                    setCartSidebarOpen(true);
-                  }}
-                >
-                  <div className="relative">
-                    <ShoppingCart className="h-5 w-5 text-gray-500" />
-                    {cart.length > 0 && (
-                      <span className="absolute -top-1.5 -right-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[#1e3a5f] text-[8px] font-bold text-white">
-                        {cart.reduce((s, i) => s + i.quantita, 0)}
+            <div className="absolute right-0 top-0 bottom-0 z-20 w-[34%] min-w-[128px] overflow-hidden border-l border-[#1e3a5f]/20 bg-white shadow-[-8px_0_24px_rgba(30,58,95,0.16)]">
+              <div className={`absolute inset-x-0 bottom-0 overflow-hidden border-t-2 border-[#1e3a5f]/35 bg-white transition-[height] duration-200 ${cartSidebarOpen ? "h-full" : "h-[28%] min-h-[112px]"}`}>
+                {cartSidebarOpen ? (
+                  <MobileCompactCart
+                    cart={cart}
+                    totals={totals}
+                    totaleConSconto={totaleConSconto}
+                    discountAmount={discountAmount}
+                    cartDiscount={cartDiscount}
+                    modoPagamento={modoPagamento}
+                    setModoPagamento={selectPaymentMode}
+                    onClear={clearCart}
+                    onSubmit={handleSubmit}
+                    isPending={inviaMutation.isPending}
+                    cartExpanded={true}
+                    onToggleExpand={() => undefined}
+                    onLongPressItem={(idx) => setCartActionIdx(idx)}
+                    onLongPressTotal={() => setShowDiscountDialog(true)}
+                    onRemoveDiscount={() => setCartDiscount(null)}
+                    onCollapse={() => setCartSidebarOpen(false)}
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    aria-label="Apri il carrello"
+                    className="flex h-full w-full flex-col text-left active:bg-blue-50"
+                    onClick={() => setCartSidebarOpen(true)}
+                  >
+                    <span className="mx-auto mt-2 h-1 w-12 shrink-0 rounded-full bg-[#1e3a5f]/30" />
+                    <div className="flex shrink-0 items-center justify-between px-2 py-2">
+                      <span className="flex min-w-0 items-center gap-1 text-[10px] font-bold text-[#1e3a5f]">
+                        <ShoppingCart className="h-3.5 w-3.5 shrink-0" />
+                        <span className="truncate">Carrello</span>
+                        <span className="shrink-0 rounded-full bg-[#1e3a5f] px-1.5 py-0.5 text-[8px] text-white">
+                          {cart.reduce((s, i) => s + i.quantita, 0)}
+                        </span>
                       </span>
-                    )}
-                  </div>
-                  {cart.length > 0 && (
-                    <span className="text-[8px] font-bold text-[#1e3a5f] font-mono" style={{ writingMode: "vertical-rl", textOrientation: "mixed" }}>
-                      €{formatCurrency(totaleConSconto)}
-                    </span>
-                  )}
-                </button>
-              )}
+                      <span className="shrink-0 font-mono text-xs font-bold text-gray-900">
+                        €{formatCurrency(totaleConSconto)}
+                      </span>
+                    </div>
+                    <div className="min-h-0 flex-1 overflow-hidden border-t">
+                      {cart.length === 0 ? (
+                        <p className="px-2 py-2 text-[9px] text-gray-400">Tocca un articolo</p>
+                      ) : (
+                        <div className="divide-y">
+                          {cart.slice(0, 2).map((item, idx) => (
+                            <div key={idx} className="flex items-center justify-between gap-1 px-2 py-1.5">
+                              <span className="min-w-0 truncate text-[9px] font-semibold text-gray-700">{item.nome}</span>
+                              <span className="shrink-0 font-mono text-[9px] text-gray-500">×{item.quantita}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <span className="shrink-0 px-2 pb-2 text-center text-[8px] font-semibold text-[#1e3a5f]">Tocca per alzare il carrello ↑</span>
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>

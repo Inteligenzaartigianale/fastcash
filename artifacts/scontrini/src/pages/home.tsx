@@ -736,7 +736,7 @@ export default function HomePage() {
 
           <div className="relative min-h-0 flex-1 overflow-hidden">
             {/* Articoli grid */}
-            <div className="h-full overflow-y-auto p-3 md:pb-3 pr-[38%]">
+            <div className="h-full overflow-y-auto p-3 md:pb-3">
               {articoliFiltrati.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center text-gray-400 gap-2">
                   <p className="text-sm">Nessun articolo</p>

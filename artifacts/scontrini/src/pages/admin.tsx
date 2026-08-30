@@ -8,7 +8,7 @@ import {
   type Catalog, type Reparto, type Articolo, type AliquotaIva,
   ALIQUOTE_IVA, NATURE_IVA, isNaturaIva,
 } from "@/lib/catalog";
-import { Plus, Pencil, Trash2, Check, Keyboard, Ticket, Banknote, ListFilter } from "lucide-react";
+import { Plus, Pencil, Trash2, Check, Keyboard, Ticket, Banknote, ListFilter, ShoppingCart } from "lucide-react";
 import { BottomNav } from "@/components/bottom-nav";
 import { GuidaChat } from "@/components/guida-chat";
 import { Button } from "@/components/ui/button";
@@ -109,6 +109,7 @@ function GeneraliPanel({ catalog, onRefresh }: { catalog: Catalog; onRefresh: ()
   const [saving, setSaving] = useState(false);
   const gestioneResto = catalog.impostazioni?.gestioneResto ?? false;
   const mostraTipoOperazione = catalog.impostazioni?.mostraTipoOperazione ?? false;
+  const carrelloLargo = catalog.impostazioni?.carrelloLargo ?? false;
 
   const toggle = async (patch: Parameters<typeof updateImpostazioni>[0]) => {
     setSaving(true);
@@ -143,6 +144,14 @@ function GeneraliPanel({ catalog, onRefresh }: { catalog: Catalog; onRefresh: ()
           <p className="text-xs text-gray-500 mt-1">Mostra il menu Vendita/Reso/Annullo in alto a destra nella cassa.</p>
         </div>
         <Switch checked={mostraTipoOperazione} disabled={saving} onCheckedChange={v => toggle({ mostraTipoOperazione: v })} />
+      </div>
+      <div className="bg-white rounded-xl border p-4 shadow-sm flex items-start gap-3">
+        <div className="w-9 h-9 rounded-lg bg-[#1e3a5f]/10 text-[#1e3a5f] flex items-center justify-center shrink-0"><ShoppingCart className="w-4 h-4" /></div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-gray-800">Carrello esteso</p>
+          <p className="text-xs text-gray-500 mt-1">Mantiene il carrello compatto in basso. La freccia lo alza sopra gli articoli fino all’altezza completa.</p>
+        </div>
+        <Switch checked={carrelloLargo} disabled={saving} onCheckedChange={v => toggle({ carrelloLargo: v })} />
       </div>
     </div>
   );

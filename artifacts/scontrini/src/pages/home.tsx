@@ -15,7 +15,7 @@ import {
   normalizeAliquotaIva,
 } from "@/lib/catalog";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { LogOut, ShoppingCart, Trash2, Plus, Minus, Pencil, Send, ChevronLeft, X, Delete, Calculator, ReceiptText, History, RefreshCw, CheckCircle2, XCircle, FileText, Tag, Percent } from "lucide-react";
+import { LogOut, ShoppingCart, Trash2, Plus, Minus, Pencil, Send, ChevronLeft, ChevronUp, X, Delete, Calculator, ReceiptText, History, RefreshCw, CheckCircle2, XCircle, FileText, Tag, Percent } from "lucide-react";
 import { QrShareButton } from "@/components/qr-display";
 import { isCapacitor, getApiBase, getDeviceToken, clearDeviceToken } from "@/lib/capacitor";
 import { BottomNav } from "@/components/bottom-nav";
@@ -205,6 +205,7 @@ export default function HomePage() {
   const gestioneResto = cat.impostazioni?.gestioneResto ?? false;
   const mostraTipoOperazione = cat.impostazioni?.mostraTipoOperazione ?? false;
   const mostraScorta = cat.impostazioni?.mostraScorta ?? true;
+  const carrelloLargo = cat.impostazioni?.carrelloLargo ?? false;
   const nrFattura     = cat.impostazioni?.nrFattura     ?? false;
   const nrPrestazioni = cat.impostazioni?.nrPrestazioni ?? false;
   const nrSanitarie   = cat.impostazioni?.nrSanitarie   ?? false;
@@ -792,8 +793,8 @@ export default function HomePage() {
             </div>
 
             {/* ── MOBILE CART: fixed right sidebar, always below the department bar ── */}
-            {cartSidebarOpen ? (
-              <div className="absolute inset-y-0 right-0 z-20 w-1/3 min-w-[128px] overflow-hidden border-l border-[#1e3a5f]/20 bg-white shadow-[-8px_0_24px_rgba(30,58,95,0.16)]">
+            {(cartSidebarOpen || carrelloLargo) ? (
+              <div className={`absolute bottom-0 right-0 z-20 w-1/3 min-w-[128px] overflow-hidden border-l border-[#1e3a5f]/20 bg-white shadow-[-8px_0_24px_rgba(30,58,95,0.16)] transition-[height] duration-200 ${cartSidebarOpen ? "h-full" : "h-[30%]"}`}>
                   <MobileCompactCart
                     cart={cart}
                     totals={totals}
@@ -805,8 +806,8 @@ export default function HomePage() {
                     onClear={clearCart}
                     onSubmit={handleSubmit}
                     isPending={inviaMutation.isPending}
-                    cartExpanded={true}
-                    onToggleExpand={() => undefined}
+                    cartExpanded={cartSidebarOpen}
+                    onToggleExpand={() => setCartSidebarOpen(v => !v)}
                     onLongPressItem={(idx) => setCartActionIdx(idx)}
                     onLongPressTotal={() => setShowDiscountDialog(true)}
                     onRemoveDiscount={() => setCartDiscount(null)}
@@ -1434,8 +1435,12 @@ function MobileCompactCart({
     >
       {/* Header */}
       <div className="px-1.5 py-1.5 border-b flex items-center justify-between shrink-0 bg-gray-50">
-        <button onClick={onCollapse} className="text-gray-400 hover:text-gray-600 transition-colors" title="Chiudi carrello">
-          <ChevronLeft className="w-3.5 h-3.5" />
+        <button
+          onClick={cartExpanded ? onCollapse : onToggleExpand}
+          className="text-gray-400 hover:text-gray-600 transition-colors"
+          title={cartExpanded ? "Riduci carrello" : "Alza carrello"}
+        >
+          {cartExpanded ? <ChevronLeft className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
         </button>
         <span className="text-[9px] font-semibold text-gray-600 flex items-center gap-0.5">
           <ShoppingCart className="w-3 h-3" />
@@ -1533,29 +1538,31 @@ function MobileCompactCart({
       )}
 
       {/* Pagamento + Emetti */}
-      <div className="px-1.5 py-1.5 space-y-1 shrink-0 mt-auto">
-        <div className="grid grid-cols-2 gap-0.5">
+      {cartExpanded && (
+        <div className="px-1.5 py-1.5 space-y-1 shrink-0 mt-auto">
+          <div className="grid grid-cols-2 gap-0.5">
+            <button
+              onClick={() => setModoPagamento("contanti")}
+              className={`h-8 rounded-lg text-[8px] font-bold transition-all active:scale-95 ${modoPagamento === "contanti" ? "bg-[#1e3a5f] text-white shadow" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
+            >
+              💵 Cont.
+            </button>
+            <button
+              onClick={() => setModoPagamento("elettronico")}
+              className={`h-8 rounded-lg text-[8px] font-bold transition-all active:scale-95 ${modoPagamento === "elettronico" ? "bg-[#1e3a5f] text-white shadow" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
+            >
+              💳 Carta
+            </button>
+          </div>
           <button
-            onClick={() => setModoPagamento("contanti")}
-            className={`h-8 rounded-lg text-[8px] font-bold transition-all active:scale-95 ${modoPagamento === "contanti" ? "bg-[#1e3a5f] text-white shadow" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
+            onClick={onSubmit}
+            disabled={isPending || cart.length === 0}
+            className="w-full bg-green-600 hover:bg-green-700 disabled:opacity-40 text-white font-bold py-2.5 rounded-xl text-[10px] flex items-center justify-center gap-1 active:scale-95 transition-all shadow-md"
           >
-            💵 Cont.
-          </button>
-          <button
-            onClick={() => setModoPagamento("elettronico")}
-            className={`h-8 rounded-lg text-[8px] font-bold transition-all active:scale-95 ${modoPagamento === "elettronico" ? "bg-[#1e3a5f] text-white shadow" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
-          >
-            💳 Carta
+            {isPending ? "..." : <><Send className="w-3 h-3" />Emetti</>}
           </button>
         </div>
-        <button
-          onClick={onSubmit}
-          disabled={isPending || cart.length === 0}
-          className="w-full bg-green-600 hover:bg-green-700 disabled:opacity-40 text-white font-bold py-2.5 rounded-xl text-[10px] flex items-center justify-center gap-1 active:scale-95 transition-all shadow-md"
-        >
-          {isPending ? "..." : <><Send className="w-3 h-3" />Emetti</>}
-        </button>
-      </div>
+      )}
     </div>
   );
 }

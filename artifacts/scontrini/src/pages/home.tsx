@@ -735,7 +735,7 @@ export default function HomePage() {
 
           <div className="relative min-h-0 flex-1 overflow-hidden">
             {/* Articoli grid */}
-            <div className="h-full overflow-y-auto p-3 md:pb-3">
+            <div className="absolute inset-0 overflow-y-auto p-3 md:pb-3">
               {articoliFiltrati.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center text-gray-400 gap-2">
                   <p className="text-sm">Nessun articolo</p>
@@ -793,7 +793,7 @@ export default function HomePage() {
 
             {/* ── MOBILE CART: fixed right sidebar, always below the department bar ── */}
             {cartSidebarOpen ? (
-              <div className="absolute right-0 top-0 bottom-0 z-20 w-[34%] min-w-[128px] overflow-hidden border-l border-[#1e3a5f]/20 bg-white shadow-[-8px_0_24px_rgba(30,58,95,0.16)]">
+              <div className="absolute inset-y-0 right-0 z-20 w-1/3 min-w-[128px] overflow-hidden border-l border-[#1e3a5f]/20 bg-white shadow-[-8px_0_24px_rgba(30,58,95,0.16)]">
                   <MobileCompactCart
                     cart={cart}
                     totals={totals}
@@ -817,7 +817,7 @@ export default function HomePage() {
               <button
                 type="button"
                 aria-label="Apri il carrello"
-                className="absolute right-0 top-1/2 z-20 flex h-14 w-9 -translate-y-1/2 items-center justify-center rounded-l-xl border border-r-0 border-[#1e3a5f]/20 bg-white/95 text-[#1e3a5f] shadow-[-4px_0_12px_rgba(30,58,95,0.12)] active:bg-blue-50"
+                className="absolute right-0 top-1/2 z-20 flex h-14 w-8 -translate-y-1/2 items-center justify-center rounded-l-xl bg-[#1e3a5f] text-white shadow-[-4px_0_12px_rgba(30,58,95,0.25)] active:bg-[#16304f]"
                 onClick={() => setCartSidebarOpen(true)}
               >
                 <span className="relative">

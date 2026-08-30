@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef, type TouchEvent } from "react";
 import { useLocation } from "wouter";
 import { useGetAeStatus, useGetMe, useInviaDocumento, useLogout, getGetMeQueryKey, getGetAeStatusQueryKey } from "@workspace/api-client-react";
 import { useRequireAuth } from "@/hooks/use-require-auth";
@@ -817,7 +817,8 @@ export default function HomePage() {
               <button
                 type="button"
                 aria-label="Apri il carrello"
-                className="absolute right-0 top-1/2 z-20 flex h-14 w-8 -translate-y-1/2 items-center justify-center rounded-l-xl bg-[#1e3a5f] text-white shadow-[-4px_0_12px_rgba(30,58,95,0.25)] active:bg-[#16304f]"
+                className="absolute right-0 top-1/2 z-20 flex h-14 w-24 -translate-y-1/2 items-center justify-center gap-1.5 rounded-l-xl bg-[#1e3a5f] px-2 text-white shadow-[-4px_0_12px_rgba(30,58,95,0.25)] active:bg-[#16304f]"
+                title={`Apri il carrello · Totale €${formatCurrency(totaleConSconto)}`}
                 onClick={() => setCartSidebarOpen(true)}
               >
                 <span className="relative">
@@ -827,6 +828,9 @@ export default function HomePage() {
                       {cart.reduce((s, i) => s + i.quantita, 0)}
                     </span>
                   )}
+                </span>
+                <span className="truncate font-mono text-xs font-bold">
+                  €{formatCurrency(totaleConSconto)}
                 </span>
               </button>
             )}
@@ -1378,6 +1382,7 @@ function MobileCompactCart({
   const lastTapRef = useRef<number>(0);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const totalLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
 
   const handleDoubleTap = () => {
     const now = Date.now();
@@ -1399,10 +1404,34 @@ function MobileCompactCart({
     if (totalLongPressTimer.current) { clearTimeout(totalLongPressTimer.current); totalLongPressTimer.current = null; }
   };
 
+  const handleSwipeStart = (event: TouchEvent<HTMLDivElement>) => {
+    const touch = event.changedTouches[0];
+    if (touch) swipeStartRef.current = { x: touch.clientX, y: touch.clientY };
+  };
+
+  const handleSwipeEnd = (event: TouchEvent<HTMLDivElement>) => {
+    const start = swipeStartRef.current;
+    const touch = event.changedTouches[0];
+    swipeStartRef.current = null;
+    if (!start || !touch) return;
+
+    const deltaX = touch.clientX - start.x;
+    const deltaY = touch.clientY - start.y;
+    if (deltaX > 56 && Math.abs(deltaX) > Math.abs(deltaY) * 1.2) {
+      onCollapse();
+    }
+  };
+
   const visibleItems = cartExpanded ? cart : cart.slice(0, 2);
 
   return (
-    <div className="h-full flex flex-col overflow-hidden">
+    <div
+      className="h-full flex flex-col overflow-hidden"
+      style={{ touchAction: "pan-y" }}
+      onTouchStart={handleSwipeStart}
+      onTouchEnd={handleSwipeEnd}
+      onTouchCancel={() => { swipeStartRef.current = null; }}
+    >
       {/* Header */}
       <div className="px-1.5 py-1.5 border-b flex items-center justify-between shrink-0 bg-gray-50">
         <button onClick={onCollapse} className="text-gray-400 hover:text-gray-600 transition-colors" title="Chiudi carrello">

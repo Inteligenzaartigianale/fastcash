@@ -166,7 +166,6 @@ export default function HomePage() {
   useEffect(() => {
     try { sessionStorage.setItem("scontrini_cart", JSON.stringify(cart)); } catch { /* storage pieno */ }
   }, [cart]);
-  const [cartExpanded, setCartExpanded] = useState(false);
   const [cartSidebarOpen, setCartSidebarOpen] = useState(false);
   const [priceInputArt, setPriceInputArt] = useState<Articolo | null>(null);
   const [priceInputText, setPriceInputText] = useState("0");
@@ -793,9 +792,8 @@ export default function HomePage() {
             </div>
 
             {/* ── MOBILE CART: fixed right sidebar, always below the department bar ── */}
-            <div className="absolute right-0 top-0 bottom-0 z-20 w-[34%] min-w-[128px] overflow-hidden border-l border-[#1e3a5f]/20 bg-white shadow-[-8px_0_24px_rgba(30,58,95,0.16)]">
-              <div className={`absolute inset-x-0 bottom-0 overflow-hidden border-t-2 border-[#1e3a5f]/35 bg-white transition-[height] duration-200 ${cartSidebarOpen ? "h-full" : "h-[28%] min-h-[112px]"}`}>
-                {cartSidebarOpen ? (
+            {cartSidebarOpen ? (
+              <div className="absolute right-0 top-0 bottom-0 z-20 w-[34%] min-w-[128px] overflow-hidden border-l border-[#1e3a5f]/20 bg-white shadow-[-8px_0_24px_rgba(30,58,95,0.16)]">
                   <MobileCompactCart
                     cart={cart}
                     totals={totals}
@@ -814,45 +812,24 @@ export default function HomePage() {
                     onRemoveDiscount={() => setCartDiscount(null)}
                     onCollapse={() => setCartSidebarOpen(false)}
                   />
-                ) : (
-                  <button
-                    type="button"
-                    aria-label="Apri il carrello"
-                    className="flex h-full w-full flex-col text-left active:bg-blue-50"
-                    onClick={() => setCartSidebarOpen(true)}
-                  >
-                    <span className="mx-auto mt-2 h-1 w-12 shrink-0 rounded-full bg-[#1e3a5f]/30" />
-                    <div className="flex shrink-0 items-center justify-between px-2 py-2">
-                      <span className="flex min-w-0 items-center gap-1 text-[10px] font-bold text-[#1e3a5f]">
-                        <ShoppingCart className="h-3.5 w-3.5 shrink-0" />
-                        <span className="truncate">Carrello</span>
-                        <span className="shrink-0 rounded-full bg-[#1e3a5f] px-1.5 py-0.5 text-[8px] text-white">
-                          {cart.reduce((s, i) => s + i.quantita, 0)}
-                        </span>
-                      </span>
-                      <span className="shrink-0 font-mono text-xs font-bold text-gray-900">
-                        €{formatCurrency(totaleConSconto)}
-                      </span>
-                    </div>
-                    <div className="min-h-0 flex-1 overflow-hidden border-t">
-                      {cart.length === 0 ? (
-                        <p className="px-2 py-2 text-[9px] text-gray-400">Tocca un articolo</p>
-                      ) : (
-                        <div className="divide-y">
-                          {cart.slice(0, 2).map((item, idx) => (
-                            <div key={idx} className="flex items-center justify-between gap-1 px-2 py-1.5">
-                              <span className="min-w-0 truncate text-[9px] font-semibold text-gray-700">{item.nome}</span>
-                              <span className="shrink-0 font-mono text-[9px] text-gray-500">×{item.quantita}</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    <span className="shrink-0 px-2 pb-2 text-center text-[8px] font-semibold text-[#1e3a5f]">Tocca per alzare il carrello ↑</span>
-                  </button>
-                )}
               </div>
-            </div>
+            ) : (
+              <button
+                type="button"
+                aria-label="Apri il carrello"
+                className="absolute right-0 top-1/2 z-20 flex h-14 w-9 -translate-y-1/2 items-center justify-center rounded-l-xl border border-r-0 border-[#1e3a5f]/20 bg-white/95 text-[#1e3a5f] shadow-[-4px_0_12px_rgba(30,58,95,0.12)] active:bg-blue-50"
+                onClick={() => setCartSidebarOpen(true)}
+              >
+                <span className="relative">
+                  <ShoppingCart className="h-5 w-5" />
+                  {cart.length > 0 && (
+                    <span className="absolute -right-2 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#1e3a5f] px-1 text-[8px] font-bold text-white">
+                      {cart.reduce((s, i) => s + i.quantita, 0)}
+                    </span>
+                  )}
+                </span>
+              </button>
+            )}
           </div>
         </div>
 

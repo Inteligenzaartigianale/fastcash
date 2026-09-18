@@ -296,7 +296,7 @@ function MobileLogin() {
               <CardContent className="pt-5 space-y-4">
                 <p className="text-sm text-muted-foreground">
                   Inserisci l'URL del server Scontrini (es.{" "}
-                  <code className="text-xs bg-muted px-1 rounded">https://xyz.replit.app/fiscale</code>).
+                  <code className="text-xs bg-muted px-1 rounded">https://www.scontrinipro.it</code>).
                   Deve iniziare con <strong>https://</strong>.
                 </p>
                 <div className="space-y-2">
@@ -304,7 +304,7 @@ function MobileLogin() {
                   <Input
                     type="url"
                     inputMode="url"
-                    placeholder="https://scontrini.example.replit.app/fiscale"
+                    placeholder="https://www.scontrinipro.it"
                     value={manualUrl}
                     onChange={(e) => { setManualUrl(e.target.value); setUrlError(""); }}
                     className="font-mono text-xs h-11"

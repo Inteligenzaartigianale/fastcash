@@ -25,3 +25,4 @@ to = "/index.html"
 [services.env]
 PORT = "23376"
 BASE_PATH = "/"
+APP_URL = "https://www.scontrinipro.it"

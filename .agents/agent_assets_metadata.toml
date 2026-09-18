@@ -6,6 +6,7 @@ id = "FzfexWRuW-TYzkoGrhVaL"
 uri = "file://scontrini-extension.zip"
 type = "unspecified"
 title = "Estensione Chrome – Scontrini Fiscali"
+logical_id = "2e6395bc-7f8b-41bd-8c93-16cb77f7d2d1"
 
 [[outputs]]
 id = "ovI3c1sELTAyiwfBaL5Nj"
@@ -13,3 +14,4 @@ uri = "file://chrome-extension/scontrini-extension.zip"
 type = "unspecified"
 title = "Estensione Chrome — versione corretta"
 description = "Raccolta cookie ripristinata al metodo originale (per dominio, non per percorso)."
+logical_id = "d72d402d-3e32-494a-b36e-671014077649"

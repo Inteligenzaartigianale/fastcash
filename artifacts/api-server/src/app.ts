@@ -32,6 +32,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.use("/api", router);
+app.use("/fiscale/api", router);
 
 // Serve Chrome extension ZIP for easy download
 app.get("/api/download/extension", (_req, res) => {

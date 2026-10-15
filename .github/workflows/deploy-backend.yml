@@ -1,0 +1,86 @@
+name: Deploy Backend → AWS Lambda
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "artifacts/api-server/**"
+      - "lib/**"
+      - "pnpm-lock.yaml"
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      FUNCTION: ${{ secrets.FASTCASH_LAMBDA_NAME }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: "true"
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Crea/aggiorna le tabelle
+        env:
+          DATABASE_URL: ${{ secrets.FASTCASH_DATABASE_URL }}
+        run: pnpm --filter @workspace/db run push-force
+
+      - name: Build
+        env:
+          NODE_ENV: production
+        run: pnpm --filter @workspace/api-server run build
+
+      - name: Pacchetto zip
+        working-directory: artifacts/api-server/dist
+        run: zip -qr ../../../lambda.zip .
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Crea o aggiorna la Lambda
+        env:
+          DATABASE_URL: ${{ secrets.FASTCASH_DATABASE_URL }}
+          SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ROLE_ARN: ${{ secrets.FASTCASH_LAMBDA_ROLE_ARN }}
+        run: |
+          set -euo pipefail
+          VARS=$(jq -nc --arg d "$DATABASE_URL" --arg s "$SESSION_SECRET" --arg o "$OPENAI_API_KEY" \
+            '{Variables:({NODE_ENV:"production",DATABASE_URL:$d,SESSION_SECRET:$s} + (if $o=="" then {} else {OPENAI_API_KEY:$o} end))}')
+          if aws lambda get-function --function-name "$FUNCTION" --no-cli-pager >/dev/null 2>&1; then
+            aws lambda update-function-code --function-name "$FUNCTION" --zip-file fileb://lambda.zip --no-cli-pager >/dev/null
+            aws lambda wait function-updated --function-name "$FUNCTION"
+            aws lambda update-function-configuration --function-name "$FUNCTION" \
+              --handler lambda.handler --runtime nodejs22.x --timeout 30 --memory-size 512 \
+              --environment "$VARS" --no-cli-pager >/dev/null
+          else
+            aws lambda create-function --function-name "$FUNCTION" --runtime nodejs22.x \
+              --handler lambda.handler --role "$ROLE_ARN" --timeout 30 --memory-size 512 \
+              --zip-file fileb://lambda.zip --environment "$VARS" --no-cli-pager >/dev/null
+            aws lambda wait function-active --function-name "$FUNCTION"
+          fi
+
+      - name: Function URL
+        run: |
+          set -euo pipefail
+          if ! aws lambda get-function-url-config --function-name "$FUNCTION" --no-cli-pager >/dev/null 2>&1; then
+            aws lambda create-function-url-config --function-name "$FUNCTION" --auth-type NONE --no-cli-pager
+            aws lambda add-permission --function-name "$FUNCTION" --statement-id public-url \
+              --action lambda:InvokeFunctionUrl --principal "*" --function-url-auth-type NONE --no-cli-pager
+          fi
+          aws lambda get-function-url-config --function-name "$FUNCTION" --query FunctionUrl --output text

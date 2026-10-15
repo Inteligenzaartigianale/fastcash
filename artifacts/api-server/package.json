@@ -21,7 +21,8 @@
     "pg": "^8.22.0",
     "pino": "^9.14.0",
     "pino-http": "^10.5.0",
-    "puppeteer": "^25.3.0"
+    "puppeteer": "^25.3.0",
+    "serverless-http": "^3.2.0"
   },
   "devDependencies": {
     "@types/cookie-parser": "^1.4.10",

@@ -4,10 +4,14 @@ import { logger } from "../lib/logger.js";
 
 const router: IRouter = Router();
 
-const openai = new OpenAI({
-  baseURL: process.env["AI_INTEGRATIONS_OPENAI_BASE_URL"],
-  apiKey: process.env["AI_INTEGRATIONS_OPENAI_API_KEY"],
-});
+function getOpenAI(): OpenAI | null {
+  const apiKey = process.env["OPENAI_API_KEY"] ?? process.env["AI_INTEGRATIONS_OPENAI_API_KEY"];
+  if (!apiKey) return null;
+  return new OpenAI({
+    baseURL: process.env["AI_INTEGRATIONS_OPENAI_BASE_URL"],
+    apiKey,
+  });
+}
 
 const SYSTEM_PROMPT = `Sei l'assistente dell'app "Scontrini Fiscali", un POS digitale per emettere Documenti Commerciali Online (DCO) tramite l'Agenzia delle Entrate italiana.
 Aiuti gli operatori di cassa a usare l'app con istruzioni chiare e passo per passo. Rispondi SEMPRE in italiano, in modo semplice e diretto. Usa emoji e numeri per rendere i passi chiari.
@@ -90,6 +94,12 @@ router.post("/chat", async (req, res) => {
 
   if (!Array.isArray(messages) || messages.length === 0) {
     res.status(400).json({ error: "messages array required" });
+    return;
+  }
+
+  const openai = getOpenAI();
+  if (!openai) {
+    res.status(503).json({ error: "Assistente AI non attivo." });
     return;
   }
 

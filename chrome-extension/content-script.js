@@ -48,7 +48,7 @@ window.addEventListener("message", (event) => {
   chrome.runtime.sendMessage(
     {
       type: "SCONTRINI_CONNECT",
-      appUrl: window.location.origin,
+      appUrl: window.location.origin + (window.location.pathname.startsWith("/fiscale") ? "/fiscale" : ""),
     },
     (result) => {
       const runtimeError = chrome.runtime.lastError;

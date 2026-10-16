@@ -1,17 +1,15 @@
 {
   "manifest_version": 3,
   "name": "Scontrini Fiscali – Connetti",
-  "version": "1.7",
+  "version": "1.8",
   "description": "Invia automaticamente i cookie di ivaservizi all'app Scontrini Fiscali",
   "permissions": ["cookies", "storage", "activeTab"],
   "host_permissions": [
     "https://ivaservizi.agenziaentrate.gov.it/*",
     "https://agenziaentrate.gov.it/*",
     "https://*.agenziaentrate.gov.it/*",
-    "https://*.replit.dev/*",
-    "https://*.replit.app/*"
-    ,"https://scontrinipro.it/*"
-    ,"https://www.scontrinipro.it/*"
+    "https://scontrinipro.it/*",
+    "https://www.scontrinipro.it/*"
   ],
   "background": {
     "service_worker": "service-worker.js"
@@ -19,8 +17,6 @@
   "content_scripts": [
     {
       "matches": [
-        "https://*.replit.dev/*",
-        "https://*.replit.app/*",
         "https://scontrinipro.it/*",
         "https://www.scontrinipro.it/*"
       ],

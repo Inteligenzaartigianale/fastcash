@@ -30,7 +30,9 @@ async function collectCookies() {
 async function connectToApp(appUrl) {
   if (!appUrl) throw new Error("URL app non disponibile");
 
-  const origin = new URL(appUrl).origin;
+  const parsed = new URL(appUrl);
+  const origin = parsed.origin;
+  const apiBase = parsed.pathname.startsWith("/fiscale") ? `${origin}/fiscale` : origin;
   const cookies = await collectCookies();
   if (cookies.length === 0) {
     throw new Error("Nessun cookie ADE trovato");
@@ -39,7 +41,7 @@ async function connectToApp(appUrl) {
   const cookieNames = cookies.map((cookie) => cookie.name);
   const dcoCookieNames = ["FATSC", "JSESSIONID"].filter((name) => cookieNames.includes(name));
 
-  const response = await fetch(`${origin}/api/auth/cookie`, {
+  const response = await fetch(`${apiBase}/api/auth/cookie`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({

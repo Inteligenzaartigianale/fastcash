@@ -5,7 +5,7 @@ const AE_DOMAINS = [
 // Current published app URL. Users can still override it below if they use
 // another public domain, but a fresh install must not start with an old or
 // empty development URL.
-const DEFAULT_APP_URL = "https://link-sender-vignolinifederi.replit.app";
+const DEFAULT_APP_URL = "https://www.scontrinipro.it/fiscale";
 
 const connectBtn = document.getElementById("connectBtn");
 const statusBox  = document.getElementById("status");

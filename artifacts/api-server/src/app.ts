@@ -28,6 +28,23 @@ app.use(
   }),
 );
 app.use(cors());
+// serverless-http consegna il body come Buffer: express.json() lo salterebbe e ogni POST arriverebbe vuoto.
+app.use((req, res, next) => {
+  if (Buffer.isBuffer(req.body)) {
+    const raw = req.body.toString("utf8");
+    const contentType = String(req.headers["content-type"] ?? "");
+    try {
+      if (!raw) req.body = {};
+      else if (contentType.includes("json")) req.body = JSON.parse(raw);
+      else if (contentType.includes("urlencoded")) req.body = Object.fromEntries(new URLSearchParams(raw));
+      else req.body = {};
+    } catch {
+      res.status(400).json({ error: "Body JSON non valido" });
+      return;
+    }
+  }
+  next();
+});
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

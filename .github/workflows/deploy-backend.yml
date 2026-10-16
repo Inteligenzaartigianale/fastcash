@@ -75,12 +75,14 @@ jobs:
             aws lambda wait function-active --function-name "$FUNCTION"
           fi
 
-      - name: Function URL
+          - name: Function URL
         run: |
           set -euo pipefail
           if ! aws lambda get-function-url-config --function-name "$FUNCTION" --no-cli-pager >/dev/null 2>&1; then
             aws lambda create-function-url-config --function-name "$FUNCTION" --auth-type NONE --no-cli-pager
-            aws lambda add-permission --function-name "$FUNCTION" --statement-id public-url \
-              --action lambda:InvokeFunctionUrl --principal "*" --function-url-auth-type NONE --no-cli-pager
           fi
+          aws lambda add-permission --function-name "$FUNCTION" --statement-id public-url \
+            --action lambda:InvokeFunctionUrl --principal "*" --function-url-auth-type NONE --no-cli-pager || true
+          aws lambda add-permission --function-name "$FUNCTION" --statement-id public-invoke \
+            --action lambda:InvokeFunction --principal "*" --invoked-via-function-url --no-cli-pager || true
           aws lambda get-function-url-config --function-name "$FUNCTION" --query FunctionUrl --output text

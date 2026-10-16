@@ -6,7 +6,7 @@
  * the `env` option in puppeteer.launch().
  */
 
-import puppeteer, { type Browser, type Page } from "puppeteer";
+import type { Browser, Page } from "puppeteer";
 import { execSync, spawn } from "node:child_process";
 import { logger } from "./logger.js";
 
@@ -190,7 +190,7 @@ async function startBrowser(): Promise<{ browser: Browser; cleanup: () => void }
   const { wsUrl, proc } = await spawnChrome(nixChromium);
   logger.info({ wsUrl }, "Chrome ready, connecting Puppeteer");
 
-  const browser = await puppeteer.connect({
+  const browser = await (await import("puppeteer")).default.connect({
     browserWSEndpoint: wsUrl,
     protocolTimeout: 180000,
   });

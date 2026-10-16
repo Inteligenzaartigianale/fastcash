@@ -75,7 +75,7 @@ jobs:
             aws lambda wait function-active --function-name "$FUNCTION"
           fi
 
-          - name: Function URL
+      - name: Function URL
         run: |
           set -euo pipefail
           if ! aws lambda get-function-url-config --function-name "$FUNCTION" --no-cli-pager >/dev/null 2>&1; then

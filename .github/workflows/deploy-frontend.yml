@@ -1,0 +1,66 @@
+name: Deploy Scontrini Pro frontend → S3
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "artifacts/scontrini/**"
+      - "lib/**"
+  workflow_dispatch:
+
+jobs:
+  deploy-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: PUPPETEER_SKIP_DOWNLOAD=true pnpm install --no-frozen-lockfile
+
+      - name: Build frontend
+        env:
+          NODE_ENV: production
+          BASE_PATH: /fiscale/
+          APP_URL: https://www.scontrinipro.it/fiscale/
+          PORT: "3000"
+        run: pnpm --filter @workspace/scontrini run build
+
+      - name: Verify build output
+        run: |
+          set -euo pipefail
+          dist="artifacts/scontrini/dist/public"
+          test -s "$dist/index.html"
+          grep -q '/fiscale/assets/' "$dist/index.html"
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Upload to S3 (fiscale/)
+        run: |
+          set -euo pipefail
+          dist="artifacts/scontrini/dist/public"
+          aws s3 sync "$dist" "s3://${{ secrets.S3_BUCKET_SCONTRINIPRO }}/fiscale/" \
+            --delete --exclude index.html --exclude version.json \
+            --cache-control "public,max-age=31536000,immutable"
+          aws s3 cp "$dist/index.html" "s3://${{ secrets.S3_BUCKET_SCONTRINIPRO }}/fiscale/index.html" \
+            --cache-control "no-cache,no-store,must-revalidate"
+          aws s3 cp "$dist/version.json" "s3://${{ secrets.S3_BUCKET_SCONTRINIPRO }}/fiscale/version.json" \
+            --cache-control "no-cache,no-store,must-revalidate"
+
+      - name: Invalidate CloudFront
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id "${{ secrets.CF_DIST_SCONTRINIPRO }}" \
+            --paths "/fiscale/*"
